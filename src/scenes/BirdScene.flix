@@ -155,6 +155,8 @@ mod BirdScene {
                     let (clampedRot, clampedAngVel) =
                         if (rot < minRotation())
                             (minRotation(), 0.0)
+                        else if (angVel < 0.0)
+                            (rot, angVel)
                         else
                             (rot, Float64.max(angVel, fallAngularVelocity()));
                     let finalRot = Float64.min(clampedRot, maxRotation());
