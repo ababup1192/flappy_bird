@@ -65,9 +65,6 @@ mod BirdScene {
     /// -30° をラジアンに変換した値
     def minRotation(): Float64 = minRotationDeg() * Vec2.pi() / 180.0
 
-    /// 下方向の回転上限（90° = π/2 rad）
-    def maxRotation(): Float64 = Vec2.pi() / 2.0
-
     /// 重力倍率
     /// 参考実装: Godot 3.x デフォルト重力 98 × gravity_scale 5.0 = 490 px/s²
     /// 2x スケール: 490 × 2 = 980 px/s²
@@ -142,27 +139,25 @@ mod BirdScene {
     // 回転制御（物理積分の後に呼ぶ）
     // ========================================================================
 
-    /// 物理積分後に回転と角速度をクランプする
-    /// - 回転が -30° 未満なら -30° に固定し角速度を 0 にする
-    /// - 角速度が 1.5 未満なら 1.5 に引き上げる（ゆっくり下を向く）
-    /// - 回転が 90° を超えないようにする
+    /// 物理積分後に回転と角速度をクランプする（参考実装準拠）
+    /// 1. 回転が -30° 未満なら -30° に固定し角速度を 0 にする
+    /// 2. 落下中（linear_velocity.y > 0）なら角速度を 1.5 にする
     pub def clampRotation(scene: Scene[NodeTag]): Scene[NodeTag] =
         scene |> mapBirdBody((body, birdData) ->
             match birdData#state {
                 case BirdState.Flapping =>
                     let rot = Node2D.getRotation(body);
-                    let angVel = RigidBody2D.getAngularVelocity(body);
-                    let (clampedRot, clampedAngVel) =
+                    let vel = RigidBody2D.getLinearVelocity(body);
+                    let (clampedRot, angVel1) =
                         if (rot < minRotation())
                             (minRotation(), 0.0)
-                        else if (angVel < 0.0)
-                            (rot, angVel)
                         else
-                            (rot, Float64.max(angVel, fallAngularVelocity()));
-                    let finalRot = Float64.min(clampedRot, maxRotation());
+                            (rot, RigidBody2D.getAngularVelocity(body));
+                    let angVel2 = if (vel#y > 0.0) fallAngularVelocity()
+                                  else angVel1;
                     (body
-                        |> Node2D.setRotation(finalRot)
-                        |> RigidBody2D.setAngularVelocity(clampedAngVel),
+                        |> Node2D.setRotation(clampedRot)
+                        |> RigidBody2D.setAngularVelocity(angVel2),
                      birdData)
                 case _ => (body, birdData)
             })
