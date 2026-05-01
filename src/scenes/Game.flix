@@ -171,12 +171,13 @@ mod Game {
     // ========================================================================
 
     /// ゲームの初期状態を構築する
-    pub def buildState(_fontAtlas: FontAtlas): GameState \ Math.Random =
+    pub def buildState(fontAtlas: FontAtlas): GameState \ Math.Random =
         let (sceneWithGrounds, groundCounter, nextGroundX) =
             Scene.empty()
                 |> addBackground
                 |> BirdScene.addBird
                 |> addCamera
+                |> ScoreScene.addHud(fontAtlas)
                 |> GroundScene.addGrounds;
         let (sceneWithPipes, pipeCounter, nextPipeX) =
             PipeScene.addPipes(sceneWithGrounds);
@@ -368,12 +369,15 @@ mod Game {
                             viewportLeftX,
                             state#pipeCounter, state#nextPipeX,
                             groundRecycledScene);
+                    // スコアラベルを更新
+                    let scoredScene = ScoreScene.updateScore(
+                        BirdScene.getBirdData(recycledScene)#score, recycledScene);
                     // 鳥が Grounded になったらゲームオーバー
-                    let birdState = BirdScene.getBirdData(recycledScene)#state;
+                    let birdState = BirdScene.getBirdData(scoredScene)#state;
                     let nextPhase =
                         if (birdState == BirdState.Grounded) GamePhase.GameOver
                         else GamePhase.Playing;
-                    {scene = recycledScene, phase = nextPhase,
+                    {scene = scoredScene, phase = nextPhase,
                      flapPressed = inputPressed,
                      groundCounter = newCounter, nextGroundX = newNextX,
                      pipeCounter = newPipeCounter, nextPipeX = newNextPipeX}

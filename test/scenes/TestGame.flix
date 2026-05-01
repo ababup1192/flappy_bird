@@ -56,16 +56,17 @@ def vecToTuple(v: Vec2.Vec2): (Float64, Float64) = (v#x, v#y)
 // ========================================================================
 
 /// シーンには bird(+sprite+area) + camera + background(+bg_sprite)
+///   + hud(+score_label)
 ///   + ground_0(+sprite) + ground_1(+sprite)
-///   + 3ペア × (2パイプ(+sprite) + coin) = 25 ノード
+///   + 3ペア × (2パイプ(+sprite) + coin) = 27 ノード
 @Test
 def testBuildSceneNodeCount(): Unit \ Assert =
-    Assert.assertEq(expected = 25, Scene.nodeCount(testScene()))
+    Assert.assertEq(expected = 27, Scene.nodeCount(testScene()))
 
-/// ルートノードは 14（bird, camera, background, ground_0, ground_1, pipe_0〜2 × top/bottom/coin）
+/// ルートノードは 15（bird, camera, background, hud, ground_0, ground_1, pipe_0〜2 × top/bottom/coin）
 @Test
 def testBuildSceneRootCount(): Unit \ Assert =
-    Assert.assertEq(expected = 14, Map.size(Scene.states(testScene())))
+    Assert.assertEq(expected = 15, Map.size(Scene.states(testScene())))
 
 /// 初期フェーズは Playing
 @Test
