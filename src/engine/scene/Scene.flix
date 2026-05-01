@@ -470,16 +470,16 @@ pub mod Scene {
     ///   - modulate: 全祖先の色を乗算
     ///   - zOffset: 祖先の zIndex 累積加算（CanvasLayer でリセット）
     ///   - layerOffset: CanvasLayer の layer * layerStride
-    def drawContext(path: NodePath, scene: Scene[s]): {layerOffset = Int32, visible = Bool, modulate = Color, zOffset = Int32, underCanvasLayer = Bool} =
-        drawContextWalk(Nil, path, scene, {layerOffset = 0, visible = true, modulate = {r = 1.0f32, g = 1.0f32, b = 1.0f32}, zOffset = 0, underCanvasLayer = false})
+    def drawContext(path: NodePath, scene: Scene[s]): {layerOffset = Int32, visible = Bool, modulate = Color, zOffset = Int32, underCanvasLayer = Bool, rotation = Float64} =
+        drawContextWalk(Nil, path, scene, {layerOffset = 0, visible = true, modulate = {r = 1.0f32, g = 1.0f32, b = 1.0f32}, zOffset = 0, underCanvasLayer = false, rotation = 0.0})
 
     /// drawContext の内部実装（パスを上から下へ辿る末尾再帰）
     def drawContextWalk(
         prefix: NodePath,
         remaining: NodePath,
         scene: Scene[s],
-        ctx: {layerOffset = Int32, visible = Bool, modulate = Color, zOffset = Int32, underCanvasLayer = Bool}
-    ): {layerOffset = Int32, visible = Bool, modulate = Color, zOffset = Int32, underCanvasLayer = Bool} =
+        ctx: {layerOffset = Int32, visible = Bool, modulate = Color, zOffset = Int32, underCanvasLayer = Bool, rotation = Float64}
+    ): {layerOffset = Int32, visible = Bool, modulate = Color, zOffset = Int32, underCanvasLayer = Bool, rotation = Float64} =
         match remaining {
             case Nil => ctx
             // 最後の要素はノード自身なのでスキップ（祖先のみ検査）
@@ -490,13 +490,14 @@ pub mod Scene {
                     case Some(engineNode) =>
                         let vis = ctx#visible and CanvasItem.isVisible(engineNode);
                         let mc = mulColor(ctx#modulate, CanvasItem.getModulate(engineNode));
+                        let rot = ctx#rotation + Node2D.getRotation(engineNode);
                         match engineNode {
                             case EngineNode.CanvasLayerWithState(cl, _) =>
                                 let CanvasLayer.CanvasLayer(r) = cl;
                                 // CanvasLayer は layerOffset を設定し、zOffset チェーンをリセット
-                                {layerOffset = r#drawLayer * CanvasLayer.layerStride(), visible = vis, modulate = mc, zOffset = 0, underCanvasLayer = true}
+                                {layerOffset = r#drawLayer * CanvasLayer.layerStride(), visible = vis, modulate = mc, zOffset = 0, underCanvasLayer = true, rotation = rot}
                             case _ =>
-                                {layerOffset = ctx#layerOffset, visible = vis, modulate = mc, zOffset = ctx#zOffset + CanvasItem.getZIndex(engineNode), underCanvasLayer = ctx#underCanvasLayer}
+                                {layerOffset = ctx#layerOffset, visible = vis, modulate = mc, zOffset = ctx#zOffset + CanvasItem.getZIndex(engineNode), underCanvasLayer = ctx#underCanvasLayer, rotation = rot}
                         }
                     case None => ctx
                 };
@@ -522,12 +523,13 @@ pub mod Scene {
             zIndex = CanvasItem.getZIndex(engineNode)
         }
 
-    /// Drawable にコンテキスト（zOffset + modulate 乗算）を適用する
-    def applyDrawContext(zOff: Int32, parentColor: Color, d: GameEngine.Drawable): GameEngine.Drawable =
+    /// Drawable にコンテキスト（zOffset + modulate 乗算 + rotation 加算）を適用する
+    def applyDrawContext(zOff: Int32, parentColor: Color, parentRotation: Float64, d: GameEngine.Drawable): GameEngine.Drawable =
         let c = d#color;
         let mc: Color = {r = parentColor#r * c#r, g = parentColor#g * c#g, b = parentColor#b * c#b};
         let d1 = {zIndex = d#zIndex + zOff | d};
-        {color = mc | d1}
+        let d2 = {color = mc | d1};
+        {rotation = d2#rotation + parentRotation | d2}
 
     /// 可視ノードを Drawable のリストに変換する
     /// 各ノードが複数 Drawable を返せるよう flatMap ベースで処理する
@@ -548,7 +550,7 @@ pub mod Scene {
                                                 else Vec2.sub(worldPos, cameraOffset);
                                 let drawables = GameEngine.Renderable.toDrawables(engineNode, screenPos);
                                 let zOff = ctx#zOffset + ctx#layerOffset;
-                                List.map(applyDrawContext(zOff, ctx#modulate), drawables)
+                                List.map(applyDrawContext(zOff, ctx#modulate, ctx#rotation), drawables)
                             } else Nil
                         case None => Nil
                     }
