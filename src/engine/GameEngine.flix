@@ -109,18 +109,18 @@ mod GameEngine {
     //   GameEngine.render(updateScene(scene));
 
     /// 全ノードの毎フレーム処理を実行する
-    pub def process(delta: Float64, paused: Bool, scene: Scene[s]): Scene[s] \ {Game, Math.Random}
+    pub def process(delta: Float64, paused: Bool, scene: Scene[s]): Scene[s] \ Node.Aef[s]
             with Node[s] =
         Scene.processAll(delta, paused, scene)
 
     /// 物理演算（重力・ダンピング・速度積分）を適用する
     pub def physicsProcess(delta: Float64, paused: Bool, gravity: Vec2.Vec2,
-                    scene: Scene[s]): Scene[s]
+                    scene: Scene[s]): Scene[s] \ Node.Aef[s]
             with Node[s] =
         PhysicsStep.step(delta, paused, gravity, scene)
 
     /// エリア衝突を検出し AreaHandler で応答する
-    pub def emitCollision(scene: Scene[s]): Scene[s]
+    pub def emitCollision(scene: Scene[s]): Scene[s] \ AreaHandler.Aef[s]
             with AreaHandler[s] =
         AreaEvent.handleOverlaps(scene)
 

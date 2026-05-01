@@ -234,4 +234,6 @@ instance PhysicsBody2D[RigidBody2D] {
 
 // ── Node 実装 ──
 
-instance Node[RigidBody2D] {}
+instance Node[RigidBody2D] {
+    type Aef = {}
+}

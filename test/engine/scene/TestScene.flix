@@ -8,7 +8,9 @@ enum TState with Eq, Order, ToString {
     case TState
 }
 
-instance Node[TState] {}
+instance Node[TState] {
+    type Aef = {}
+}
 
 /// テスト用ヘルパー: 指定位置に Marker2D ノードを持つ EngineNode[TState] を作る
 def tmarker(x: Float64, y: Float64): EngineNode[TState] =
@@ -343,11 +345,10 @@ def testSceneNodeCount(): Unit \ Assert =
 /// processAll はエラーなく全ノードを走査できる
 @Test
 def testSceneProcessAll(): Unit \ Assert =
-    let scene = withMockEngine(() ->
-        Scene.empty()
+    let scene = Scene.empty()
             |> Scene.addNode("root", tmarker(0.0, 0.0))
             |> Scene.addChild("root", "a", tmarker(1.0, 0.0))
-            |> Scene.processAll(0.016f64, false));
+            |> Scene.processAll(0.016f64, false);
     let gp = Scene.globalPositionAt("root" :: "a" :: Nil, scene);
     Assert.assertEq(expected = (1.0, 0.0), (gp#x, gp#y))
 

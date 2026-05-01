@@ -2,9 +2,10 @@
 //
 // CanvasLayer (layer=1) の子として Label2D を配置し、
 // カメラに影響されないスクリーン固定のスコア表示を行う。
+// スコア値は Label2D の NodeTag.Score(Int32) に保持する。
 //
 //   CanvasLayerWithState(hud, NoTag)
-//     └── Label2DWithState(label, NoTag)
+//     └── Label2DWithState(label, Score(0))
 
 mod ScoreScene {
 
@@ -19,7 +20,7 @@ mod ScoreScene {
     def scoreLabelName(): String = "score_label"
 
     /// スコアラベルのノードパス
-    def scoreLabelPath(): NodePath = hudLayerName() :: scoreLabelName() :: Nil
+    pub def scoreLabelPath(): NodePath = hudLayerName() :: scoreLabelName() :: Nil
 
     /// スコア用フォントサイズ
     def scoreFontSize(): Float64 = 60.0
@@ -41,13 +42,31 @@ mod ScoreScene {
             |> Scene.addNode(hudLayerName(),
                 EngineNode.CanvasLayerWithState(layer, NodeTag.NoTag))
             |> Scene.addChild(hudLayerName(), scoreLabelName(),
-                EngineNode.Label2DWithState(label, NodeTag.NoTag))
+                EngineNode.Label2DWithState(label, NodeTag.Score(0)))
 
     // ========================================================================
-    // スコア更新
+    // スコア取得・更新
     // ========================================================================
 
-    /// スコアラベルのテキストを更新する
+    /// Scene から現在のスコアを取り出す
+    pub def getScore(scene: Scene[NodeTag]): Int32 =
+        match Scene.getState(scoreLabelPath(), scene) {
+            case Some(NodeTag.Score(score)) => score
+            case _ => bug!("score_label not found")
+        }
+
+    /// スコアを 1 加算し、ラベルテキストも同時に更新する
+    pub def incrementScore(scene: Scene[NodeTag]): Scene[NodeTag] =
+        let newScore = getScore(scene) + 1;
+        Scene.mapEngineNode(scoreLabelPath(), engineNode -> match engineNode {
+            case EngineNode.Label2DWithState(label, NodeTag.Score(_)) =>
+                EngineNode.Label2DWithState(
+                    Label2D.setText("${newScore}", label),
+                    NodeTag.Score(newScore))
+            case other => other
+        }, scene)
+
+    /// スコアラベルのテキストを指定値で更新する
     pub def updateScore(score: Int32, scene: Scene[NodeTag]): Scene[NodeTag] =
         Scene.mapEngineNode(scoreLabelPath(),
             EngineNode.mapLabel2D(Label2D.setText("${score}")),

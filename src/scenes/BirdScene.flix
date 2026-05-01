@@ -19,8 +19,9 @@ mod BirdScene {
     /// 鳥の状態データ（フレーム間で変化する純粋データ）
     /// state: 鳥の状態マシン
     /// speed: 横方向の移動速度（px/秒）
-    /// score: 通過パイプ数（スコア）
-    pub type alias BirdData = {state = BirdState, speed = Float64, score = Int32}
+    /// flapRequested: フラップリクエスト（次の physicsProcess で適用される）
+    /// flapPressed: 前フレームでフラップ入力があったか（連続入力防止用）
+    pub type alias BirdData = {state = BirdState, speed = Float64, flapRequested = Bool, flapPressed = Bool}
 
     // ========================================================================
     // 定数 — ノード名・パス
@@ -109,7 +110,7 @@ mod BirdScene {
             Vec2.zero(),
             {x = 2.0, y = 2.0});
         let area = Area2D.make(Vec2.zero(), birdCollisionShape());
-        let birdData: BirdData = {state = BirdState.Flapping, speed = birdSpeed(), score = 0};
+        let birdData: BirdData = {state = BirdState.Flapping, speed = birdSpeed(), flapRequested = false, flapPressed = false};
         scene
             |> Scene.addNode(name(),
                 EngineNode.RigidBody2DWithState(body, NodeTag.Bird(birdData)))
@@ -135,6 +136,68 @@ mod BirdScene {
                      birdData)
                 case _ => (body, birdData)
             })
+
+    // ========================================================================
+    // フラップリクエスト（gameLoop → physicsProcess 連携用）
+    // ========================================================================
+
+    /// フラップリクエストをセットする（次の physicsProcess で速度に反映される）
+    /// Flapping 状態のときのみ有効
+    pub def requestFlap(scene: Scene[NodeTag]): Scene[NodeTag] =
+        scene |> mapBirdBody((body, birdData) ->
+            match birdData#state {
+                case BirdState.Flapping => (body, {flapRequested = true | birdData})
+                case _ => (body, birdData)
+            })
+
+    /// 前フレームのフラップ入力状態を更新する
+    pub def setFlapPressed(pressed: Bool, scene: Scene[NodeTag]): Scene[NodeTag] =
+        scene |> mapBirdBody((body, birdData) ->
+            (body, {flapPressed = pressed | birdData}))
+
+    // ========================================================================
+    // physicsProcess コールバック（物理積分の前に呼ばれる）
+    // ========================================================================
+
+    /// physicsProcess コールバック: フラップ速度適用と落下時の角速度制御
+    /// フラップリクエストがあれば速度を設定し、なければ落下状態に応じて角速度を制御する
+    pub def birdPhysicsProcess(body: RigidBody2D, birdData: BirdData): (RigidBody2D, BirdData) =
+        match birdData#state {
+            case BirdState.Flapping =>
+                if (birdData#flapRequested) {
+                    let vel = RigidBody2D.getLinearVelocity(body);
+                    (body
+                        |> RigidBody2D.setLinearVelocity({x = vel#x, y = flapVelocityY()})
+                        |> RigidBody2D.setAngularVelocity(flapAngularVelocity()),
+                     {flapRequested = false | birdData})
+                } else {
+                    let vel = RigidBody2D.getLinearVelocity(body);
+                    let angVel = if (vel#y > 0.0) fallAngularVelocity()
+                                 else RigidBody2D.getAngularVelocity(body);
+                    (body |> RigidBody2D.setAngularVelocity(angVel), birdData)
+                }
+            case _ => (body, {flapRequested = false | birdData})
+        }
+
+    // ========================================================================
+    // process コールバック（毎フレーム先頭で呼ばれる）
+    // ========================================================================
+
+    /// process コールバック: 前フレームの物理積分後の回転角をクランプする
+    /// 回転が -30° 未満なら -30° に固定し角速度を 0 にする
+    pub def birdProcess(body: RigidBody2D, birdData: BirdData): (RigidBody2D, BirdData) =
+        match birdData#state {
+            case BirdState.Flapping =>
+                let rot = Node2D.getRotation(body);
+                if (rot < minRotation())
+                    (body
+                        |> Node2D.setRotation(minRotation())
+                        |> RigidBody2D.setAngularVelocity(0.0),
+                     birdData)
+                else
+                    (body, birdData)
+            case _ => (body, birdData)
+        }
 
     // ========================================================================
     // 回転制御（物理積分の後に呼ぶ）
@@ -202,11 +265,6 @@ mod BirdScene {
                 EngineNode.RigidBody2DWithState(newBody, NodeTag.Bird(newData))
             case other => other
         }, scene)
-
-    /// スコアを 1 加算する
-    pub def incrementScore(scene: Scene[NodeTag]): Scene[NodeTag] =
-        scene |> mapBirdBody((body, birdData) ->
-            (body, {score = birdData#score + 1 | birdData}))
 
     /// Scene から BirdData を取り出す
     pub def getBirdData(scene: Scene[NodeTag]): BirdData =

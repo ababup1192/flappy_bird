@@ -19,7 +19,7 @@ pub mod PhysicsStep {
 
     /// 物理ステップ: physicsProcess → 重力適用 → ダンピング → 速度積分
     /// 全ノードの physicsProcess を呼んだ後、RigidBody2D に物理更新を適用する。
-    pub def step(delta: Float64, paused: Bool, gravity: Vec2.Vec2, scene: Scene[s]): Scene[s] with Node[s] =
+    pub def step(delta: Float64, paused: Bool, gravity: Vec2.Vec2, scene: Scene[s]): Scene[s] \ Node.Aef[s] with Node[s] =
         let afterPhysicsProcess = Scene.physicsProcessAll(delta, paused, scene);
         integrate(delta, gravity, afterPhysicsProcess)
 

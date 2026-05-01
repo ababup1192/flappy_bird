@@ -138,4 +138,6 @@ instance CollisionObject2D[StaticBody2D] {
 
 // ── Node 実装 ──
 
-instance Node[StaticBody2D] {}
+instance Node[StaticBody2D] {
+    type Aef = {}
+}

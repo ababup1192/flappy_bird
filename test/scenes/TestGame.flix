@@ -48,6 +48,10 @@ def testScene(): Scene[NodeTag] =
 def testState(): GameState =
     withMockRandom(() -> Game.buildState(testFontAtlas()))
 
+/// テスト用ヘルパー: LevelManagerData を取得
+def testLevelData(): LevelManagerData =
+    Game.getLevelManagerData(testScene())
+
 /// Vec2 をタプルに変換するヘルパー
 def vecToTuple(v: Vec2.Vec2): (Float64, Float64) = (v#x, v#y)
 
@@ -56,17 +60,17 @@ def vecToTuple(v: Vec2.Vec2): (Float64, Float64) = (v#x, v#y)
 // ========================================================================
 
 /// シーンには bird(+sprite+area) + camera + background(+bg_sprite)
-///   + hud(+score_label)
+///   + hud(+score_label) + level_manager
 ///   + ground_0(+sprite) + ground_1(+sprite)
-///   + 3ペア × (2パイプ(+sprite) + coin) = 27 ノード
+///   + 3ペア × (2パイプ(+sprite) + coin) = 28 ノード
 @Test
 def testBuildSceneNodeCount(): Unit \ Assert =
-    Assert.assertEq(expected = 27, Scene.nodeCount(testScene()))
+    Assert.assertEq(expected = 28, Scene.nodeCount(testScene()))
 
-/// ルートノードは 15（bird, camera, background, hud, ground_0, ground_1, pipe_0〜2 × top/bottom/coin）
+/// ルートノードは 16（bird, camera, background, hud, level_manager, ground_0, ground_1, pipe_0〜2 × top/bottom/coin）
 @Test
 def testBuildSceneRootCount(): Unit \ Assert =
-    Assert.assertEq(expected = 15, Map.size(Scene.states(testScene())))
+    Assert.assertEq(expected = 16, Map.size(Scene.states(testScene())))
 
 /// 初期フェーズは Playing
 @Test
@@ -76,7 +80,7 @@ def testBuildStatePhase(): Unit \ Assert =
 /// 初期 groundCounter は 2（ground_0, ground_1 が配置済み）
 @Test
 def testBuildStateGroundCounter(): Unit \ Assert =
-    Assert.assertEq(expected = 2, testState()#groundCounter)
+    Assert.assertEq(expected = 2, testLevelData()#groundCounter)
 
 // ========================================================================
 // BirdScene: 鳥の初期配置
@@ -318,7 +322,7 @@ def testFlapAngularVelocityAfterClamp(): Unit \ Assert =
 @Test
 def testBirdSpriteAnimationAdvances(): Unit \ Assert =
     // fps=10, 0.15s 後にフレーム 1 に進む (frameDuration = 0.1s)
-    match withMockEngine(() -> testScene() |> Scene.processAll(0.15, false))
+    match withMockRandom(() -> testScene() |> Scene.processAll(0.15, false))
         |> Scene.getEngineNode("bird" :: "sprite" :: Nil) {
         case Some(EngineNode.AnimSprite2DWithState(sprite, _)) =>
             Assert.assertEq(expected = "bird_orange_1", AnimatedSprite2D.currentTexture(sprite))
@@ -653,12 +657,12 @@ def testPipe2Position(): Unit \ Assert =
 /// pipeCounter は 3（3 ペア配置済み）
 @Test
 def testBuildStatePipeCounter(): Unit \ Assert =
-    Assert.assertEq(expected = 3, testState()#pipeCounter)
+    Assert.assertEq(expected = 3, testLevelData()#pipeCounter)
 
 /// nextPipeX は 978.0（432 + 182×3）
 @Test
 def testBuildStateNextPipeX(): Unit \ Assert =
-    Assert.assertEq(expected = 978.0, testState()#nextPipeX)
+    Assert.assertEq(expected = 978.0, testLevelData()#nextPipeX)
 
 // ========================================================================
 // Phase 4: spawnPipePairAt
@@ -754,3 +758,103 @@ def testRecyclePipesNewPipePosition(): Unit \ Assert =
         PipeScene.recyclePipes(500.0, 3, 978.0, testScene()));
     let pos = Scene.globalPosition("pipe_3_bottom", recycledScene);
     Assert.assertEq(expected = (978.0, 402.0), vecToTuple(pos))
+
+// ========================================================================
+// Phase 6: GameOverScene — メダル判定
+// ========================================================================
+
+/// score=10 → bronze メダル
+@Test
+def testMedalBronze(): Unit \ Assert =
+    Assert.assertEq(expected = Some("medal_bronze"), GameOverScene.getMedalTexture(10))
+
+/// score=20 → silver メダル
+@Test
+def testMedalSilver(): Unit \ Assert =
+    Assert.assertEq(expected = Some("medal_silver"), GameOverScene.getMedalTexture(20))
+
+/// score=30 → gold メダル
+@Test
+def testMedalGold(): Unit \ Assert =
+    Assert.assertEq(expected = Some("medal_gold"), GameOverScene.getMedalTexture(30))
+
+/// score=50 → platinum メダル
+@Test
+def testMedalPlatinum(): Unit \ Assert =
+    Assert.assertEq(expected = Some("medal_platinum"), GameOverScene.getMedalTexture(50))
+
+/// score=15 → bronze メダル（10 以上 20 未満）
+@Test
+def testMedalBronze15(): Unit \ Assert =
+    Assert.assertEq(expected = Some("medal_bronze"), GameOverScene.getMedalTexture(15))
+
+/// score=5 → メダルなし（10 未満）
+@Test
+def testNoMedalBelowThreshold(): Unit \ Assert =
+    Assert.assertEq(expected = (None: Option[String]), GameOverScene.getMedalTexture(5))
+
+/// score=0 → メダルなし
+@Test
+def testNoMedalZero(): Unit \ Assert =
+    Assert.assertEq(expected = (None: Option[String]), GameOverScene.getMedalTexture(0))
+
+// ========================================================================
+// Phase 6: GameOverScene — Play ボタン判定
+// ========================================================================
+
+/// ボタン中央をクリック → true
+@Test
+def testPlayButtonClickCenter(): Unit \ Assert =
+    Assert.assertTrue(GameOverScene.isPlayButtonClicked({x = 144.0, y = 390.0}))
+
+/// ボタン範囲内（右端ギリギリ）→ true
+@Test
+def testPlayButtonClickInBounds(): Unit \ Assert =
+    Assert.assertTrue(GameOverScene.isPlayButtonClicked({x = 196.0, y = 419.0}))
+
+/// ボタン範囲外（右に大きくずれ）→ false
+@Test
+def testPlayButtonClickOutOfBoundsRight(): Unit \ Assert =
+    Assert.assertFalse(GameOverScene.isPlayButtonClicked({x = 250.0, y = 390.0}))
+
+/// ボタン範囲外（下に大きくずれ）→ false
+@Test
+def testPlayButtonClickOutOfBoundsBelow(): Unit \ Assert =
+    Assert.assertFalse(GameOverScene.isPlayButtonClicked({x = 144.0, y = 460.0}))
+
+// ========================================================================
+// Phase 6: GameOverScene — UI ノード構築
+// ========================================================================
+
+/// addGameOverUI で score < 10 の場合、5 ノード追加される（メダルなし）
+///   gameover(layer) + gameover_label + score_panel + final_score + play_button = 5
+@Test
+def testGameOverUINodeCountNoMedal(): Unit \ Assert =
+    let baseSene = testScene();
+    let baseCount = Scene.nodeCount(baseSene);
+    let scene = GameOverScene.addGameOverUI(5, testFontAtlas(), baseSene);
+    Assert.assertEq(expected = 5, Scene.nodeCount(scene) - baseCount)
+
+/// addGameOverUI で score >= 10 の場合、6 ノード追加される（メダルあり）
+///   gameover(layer) + gameover_label + score_panel + medal + final_score + play_button = 6
+@Test
+def testGameOverUINodeCountWithMedal(): Unit \ Assert =
+    let baseSene = testScene();
+    let baseCount = Scene.nodeCount(baseSene);
+    let scene = GameOverScene.addGameOverUI(15, testFontAtlas(), baseSene);
+    Assert.assertEq(expected = 6, Scene.nodeCount(scene) - baseCount)
+
+/// addGameOverUI 後に HUD スコアラベルが非表示になること
+@Test
+def testGameOverHidesHudScore(): Unit \ Assert =
+    let scene = GameOverScene.addGameOverUI(0, testFontAtlas(), testScene());
+    match Scene.getEngineNode(ScoreScene.scoreLabelPath(), scene) {
+        case Some(EngineNode.Label2DWithState(label, _)) =>
+            Assert.assertFalse(CanvasItem.isVisible(label))
+        case _ => bug!("score_label not found")
+    }
+
+/// buildState のノード数は GameOver UI 追加前と同じ（28）
+@Test
+def testBuildStateNodeCountUnchanged(): Unit \ Assert =
+    Assert.assertEq(expected = 28, Scene.nodeCount(testScene()))

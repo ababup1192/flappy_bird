@@ -1,8 +1,11 @@
 // Tests for PhysicsStep module
 
 // テスト用の最小限 Node instance
-instance Node[Int32] {}
+instance Node[Int32] {
+    type Aef = {}
+}
 instance AreaHandler[Int32] {
+    type Aef = {}
     pub def onAreaEntered(_selfPath: NodePath, _selfState: Int32,
                           _otherPath: NodePath, _otherState: Int32,
                           scene: Scene[Int32]): Scene[Int32] = scene

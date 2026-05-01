@@ -97,7 +97,7 @@ pub mod AreaEvent {
     // ========================================================================
 
     /// Scene.processAll + 重なりイベント発火を一括で行う。
-    pub def processAndEmit(delta: Float64, paused: Bool, scene: Scene[s]): Scene[s] \ {OnAreaEvent, GameEngine.Game, Math.Random} with Node[s] =
+    pub def processAndEmit(delta: Float64, paused: Bool, scene: Scene[s]): Scene[s] \ OnAreaEvent + Node.Aef[s] with Node[s] =
         let updated = Scene.processAll(delta, paused, scene);
         emitOverlapEvents(updated);
         updated
@@ -116,7 +116,7 @@ pub mod AreaEvent {
     /// processAll 済みの Scene に対してエリアイベントを検出・ハンドリングする。
     /// AreaHandler.onAreaEntered / onAreaExited をディスパッチし、
     /// prevOverlaps を更新して返す。
-    pub def handleOverlaps(scene: Scene[s]): Scene[s] with AreaHandler[s] =
+    pub def handleOverlaps(scene: Scene[s]): Scene[s] \ AreaHandler.Aef[s] with AreaHandler[s] =
         let prevOverlaps = Scene.getPrevOverlaps(scene);
         let overlaps = detectOverlaps(scene);
         let currentPairs = toOverlapPairSet(overlaps);
@@ -145,7 +145,7 @@ pub mod AreaEvent {
     /// Scene.processAll + 重なり検出 + AreaHandler.onAreaEntered / onAreaExited ディスパッチ。
     /// Scene 内の prevOverlaps を読み書きし、離脱したペアに onAreaExited を発火する。
     pub def processAndEmitHandled(delta: Float64, paused: Bool,
-                                  scene: Scene[s]): Scene[s] \ {GameEngine.Game, Math.Random}
+                                  scene: Scene[s]): Scene[s] \ Node.Aef[s] + AreaHandler.Aef[s]
             with Node[s], AreaHandler[s] =
         Scene.processAll(delta, paused, scene) |> handleOverlaps
 

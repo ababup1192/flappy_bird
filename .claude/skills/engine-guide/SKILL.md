@@ -54,9 +54,20 @@ def main(): Unit \ IO =
 // 8. mod Game { buildState, gameLoop, フェーズ遷移, ヘルパー }
 ```
 
+### GameState type alias
+
+scene とゲーム全体の状態を 1 レコードにまとめる:
+基本は、SceneとGamePhaseだけ、内部状態は、次のNodeTagのenumに含める
+
+```flix
+pub type alias GameState = { scene = Scene[NodeTag], phase = GamePhase }
+```
+
+
 ### NodeTag enum
 
-ノード固有の状態データ。エンジン型（Area2D 等）は含めない（それは EngineNode の役割）:
+これを起点に、Sceneの書き換えや処理を行う:
+NodeTagになるべくNodeに関連したデータを紐づけて、関連処理を行う。
 
 ```flix
 pub enum NodeTag {
@@ -68,21 +79,14 @@ pub enum NodeTag {
 }
 ```
 
-### GameState type alias
-
-scene とゲーム全体の状態を 1 レコードにまとめる:
-
-```flix
-pub type alias GameState = { scene = Scene[NodeTag], phase = GamePhase, score = Int32 }
-```
-
-レコード更新: `{ scene = newScene, phase = GamePhase.GameOver | state }`
 
 ## Game.flix と XxxScene の協業
 
 ### Node instance — XxxScene への委譲
 
 `EngineNode × NodeTag` の二重 match で分岐し、XxxScene の関数に委譲する:
+なるべく、各Sceneで ready, process, pyhisicProcess を定義することで、GameLoopはシンプルに保つ。
+Game.flixに処理はなるべく書かない。
 
 ```flix
 instance Node[NodeTag] {

@@ -134,4 +134,6 @@ instance CollisionObject2D[Area2D] {
 
 // -- Node 実装 --
 
-instance Node[Area2D] {}
+instance Node[Area2D] {
+    type Aef = {}
+}

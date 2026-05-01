@@ -31,6 +31,22 @@ pub enum GamePhase with Eq, ToString {
 }
 
 // ========================================================================
+// レベル管理データ
+// ========================================================================
+
+/// リサイクル用カウンタ（LevelManager ノードが保持する）
+/// groundCounter: 次の地面タイル番号（ユニーク名生成用）
+/// nextGroundX: 次の地面タイル中心の X 座標
+/// pipeCounter: 次のパイプペア番号（ユニーク名生成用）
+/// nextPipeX: 次のパイプペア中心の X 座標
+pub type alias LevelManagerData = {
+    groundCounter = Int32,
+    nextGroundX = Float64,
+    pipeCounter = Int32,
+    nextPipeX = Float64
+}
+
+// ========================================================================
 // ノードタグ
 // ========================================================================
 
@@ -46,6 +62,10 @@ pub enum NodeTag {
     case Pipe
     /// パイプ間の採点用 Area2D に付与
     case Coin
+    /// スコアラベルに付与。現在のスコア値を保持する
+    case Score(Int32)
+    /// レベル管理ノード（リサイクルカウンタを保持）
+    case LevelManager(LevelManagerData)
     /// タグ不要なノード（スプライト子ノード等）
     case NoTag
 }
@@ -55,31 +75,45 @@ pub enum NodeTag {
 // ========================================================================
 
 /// ゲーム全体の状態レコード
-/// scene: シーングラフ
+/// scene: シーングラフ（ゲームの全状態は NodeTag バリアントに集約）
 /// phase: ゲームフェーズ
-/// flapPressed: 前フレームでフラップ入力があったか（連続入力防止用）
-/// groundCounter: 次の地面タイル番号（ユニーク名生成用）
-/// nextGroundX: 次の地面タイル中心の X 座標
-/// pipeCounter: 次のパイプペア番号（ユニーク名生成用）
-/// nextPipeX: 次のパイプペア中心の X 座標
 pub type alias GameState = {
     scene = Scene[NodeTag],
-    phase = GamePhase,
-    flapPressed = Bool,
-    groundCounter = Int32,
-    nextGroundX = Float64,
-    pipeCounter = Int32,
-    nextPipeX = Float64
+    phase = GamePhase
 }
 
 // ========================================================================
-// Node 実装（Phase 2: 特別な process なし）
+// Node 実装
 // ========================================================================
 
 instance Node[NodeTag] {
+    type Aef = { Math.Random }
+    // Bird: 回転角クランプ / Camera2D: 追従 / LevelManager: リサイクル
     redef process(_delta: Float64, node: EngineNode[NodeTag],
                   _path: NodePath, scene: Scene[NodeTag]): (EngineNode[NodeTag], Scene[NodeTag]) \ Math.Random =
-        checked_ecast((node, scene))
+        match node {
+            case EngineNode.RigidBody2DWithState(body, NodeTag.Bird(birdData)) =>
+                let (newBody, newData) = BirdScene.birdProcess(body, birdData);
+                checked_ecast((EngineNode.RigidBody2DWithState(newBody, NodeTag.Bird(newData)), scene))
+            case EngineNode.Camera2DWithState(cam, state) =>
+                let birdPos = Scene.globalPosition("bird", scene);
+                checked_ecast((EngineNode.Camera2DWithState(
+                    Node2D.setPosition({x = birdPos#x, y = 0.0}, cam), state), scene))
+            case EngineNode.Sprite2DWithState(sprite, NodeTag.LevelManager(levelData)) =>
+                let (newData, newScene) = Game.levelManagerProcess(levelData, scene);
+                (EngineNode.Sprite2DWithState(sprite, NodeTag.LevelManager(newData)), newScene)
+            case _ => checked_ecast((node, scene))
+        }
+
+    // Bird: フラップリクエストの適用と落下時の角速度制御
+    redef physicsProcess(_delta: Float64, node: EngineNode[NodeTag],
+                         _path: NodePath, scene: Scene[NodeTag]): (EngineNode[NodeTag], Scene[NodeTag]) \ Math.Random =
+        match node {
+            case EngineNode.RigidBody2DWithState(body, NodeTag.Bird(birdData)) =>
+                let (newBody, newData) = BirdScene.birdPhysicsProcess(body, birdData);
+                checked_ecast((EngineNode.RigidBody2DWithState(newBody, NodeTag.Bird(newData)), scene))
+            case _ => checked_ecast((node, scene))
+        }
 }
 
 // ========================================================================
@@ -87,23 +121,24 @@ instance Node[NodeTag] {
 // ========================================================================
 
 instance AreaHandler[NodeTag] {
+    type Aef = { GameEngine.Audio }
     pub def onAreaEntered(selfPath: NodePath, selfState: NodeTag,
                           otherPath: NodePath, otherState: NodeTag,
-                          scene: Scene[NodeTag]): Scene[NodeTag] =
+                          scene: Scene[NodeTag]): Scene[NodeTag] \ GameEngine.Audio =
         match (selfState, otherState) {
             case (NodeTag.BirdArea, NodeTag.Ground) =>
-                Game.onBirdHitGround(scene)
+                checked_ecast(Game.onBirdHitGround(scene))
             case (NodeTag.Ground, NodeTag.BirdArea) =>
-                Game.onBirdHitGround(scene)
+                checked_ecast(Game.onBirdHitGround(scene))
             case (NodeTag.BirdArea, NodeTag.Pipe) =>
-                Game.onBirdHitPipe(pipePath = otherPath, scene)
+                checked_ecast(Game.onBirdHitPipe(pipePath = otherPath, scene))
             case (NodeTag.Pipe, NodeTag.BirdArea) =>
-                Game.onBirdHitPipe(pipePath = selfPath, scene)
+                checked_ecast(Game.onBirdHitPipe(pipePath = selfPath, scene))
             case (NodeTag.BirdArea, NodeTag.Coin) =>
                 Game.onBirdPassedCoin(coinPath = otherPath, scene)
             case (NodeTag.Coin, NodeTag.BirdArea) =>
                 Game.onBirdPassedCoin(coinPath = selfPath, scene)
-            case _ => scene
+            case _ => checked_ecast(scene)
         }
 }
 
@@ -150,9 +185,6 @@ mod Game {
     /// カメラノード名
     def cameraName(): String = "camera"
 
-    /// カメラノードパス
-    def cameraPath(): NodePath = cameraName() :: Nil
-
     /// カメラオフセット X（参考実装 -36 の 2 倍）
     def cameraOffsetX(): Float64 = -72.0
 
@@ -165,6 +197,20 @@ mod Game {
 
     /// 背景スプライト子ノード名
     def bgSpriteName(): String = "bg_sprite"
+
+    // ========================================================================
+    // レベル管理ノード
+    // ========================================================================
+
+    /// レベル管理ノード名
+    def levelManagerName(): String = "level_manager"
+
+    /// Scene から LevelManagerData を取り出す
+    pub def getLevelManagerData(scene: Scene[NodeTag]): LevelManagerData =
+        match Scene.getState(levelManagerName() :: Nil, scene) {
+            case Some(NodeTag.LevelManager(data)) => data
+            case _ => bug!("level_manager not found")
+        }
 
     // ========================================================================
     // 初期状態構築
@@ -181,14 +227,15 @@ mod Game {
                 |> GroundScene.addGrounds;
         let (sceneWithPipes, pipeCounter, nextPipeX) =
             PipeScene.addPipes(sceneWithGrounds);
-        {   scene = sceneWithPipes,
-            phase = GamePhase.Playing,
-            flapPressed = false,
-            groundCounter = groundCounter,
-            nextGroundX = nextGroundX,
-            pipeCounter = pipeCounter,
-            nextPipeX = nextPipeX
-        }
+        let levelData: LevelManagerData = {
+            groundCounter = groundCounter, nextGroundX = nextGroundX,
+            pipeCounter = pipeCounter, nextPipeX = nextPipeX
+        };
+        let manager = Sprite2D.make("", Vec2.zero(), {x = 1.0, y = 1.0});
+        let scene = sceneWithPipes
+            |> Scene.addNode(levelManagerName(),
+                EngineNode.Sprite2DWithState(manager, NodeTag.LevelManager(levelData)));
+        {scene = scene, phase = GamePhase.Playing}
 
     // ========================================================================
     // シーン構築ヘルパー
@@ -248,10 +295,11 @@ mod Game {
         }
 
     /// 鳥がコインを通過したときの処理
-    /// スコアを +1 し、コインの NodeTag を NoTag に変更して再採点を防止する
-    pub def onBirdPassedCoin(coinPath: {coinPath = NodePath}, scene: Scene[NodeTag]): Scene[NodeTag] =
+    /// スコアを +1 し、効果音を鳴らし、コインの NodeTag を NoTag に変更して再採点を防止する
+    pub def onBirdPassedCoin(coinPath: {coinPath = NodePath}, scene: Scene[NodeTag]): Scene[NodeTag] \ GameEngine.Audio =
+        GameEngine.Audio.playAudio("sfx_point");
         scene
-            |> BirdScene.incrementScore
+            |> ScoreScene.incrementScore
             |> Scene.setState(coinPath#coinPath, NodeTag.NoTag)
 
     /// 鳥をパイプの左端に押し戻す
@@ -288,29 +336,34 @@ mod Game {
     // ========================================================================
 
     /// エンジン更新パイプライン（process → physics → collision → screen → timers）
-    def engineUpdate(dt: Float64, scene: Scene[NodeTag]): Scene[NodeTag] \ {GameEngine.Game, Math.Random} =
+    def engineUpdate(dt: Float64, scene: Scene[NodeTag]): Scene[NodeTag] \ {GameEngine.Audio, Math.Random} =
         (GameEngine.process(dt, false)
         >> GameEngine.physicsProcess(dt, false, PhysicsStep.defaultGravity())
         >> GameEngine.emitCollision
         >> GameEngine.emitScreenNotify(screenWidth = screenWi(), screenHeight = screenHi())
         >> GameEngine.emitTimers)(scene)
 
-    // ========================================================================
-    // カメラ追従
-    // ========================================================================
-
-    /// カメラを鳥の X 座標に追従させる（Y は固定）
-    def followCamera(scene: Scene[NodeTag]): Scene[NodeTag] =
-        let birdPos = Scene.globalPosition("bird", scene);
-        Scene.mapEngineNode(cameraPath(),
-            EngineNode.mapCamera2D(cam ->
-                Node2D.setPosition({x = birdPos#x, y = 0.0}, cam)),
-            scene)
-
     /// ビューポートの左端 X 座標を取得する
-    def getViewportLeftX(scene: Scene[NodeTag]): Float64 =
+    pub def getViewportLeftX(scene: Scene[NodeTag]): Float64 =
         let birdPos = Scene.globalPosition("bird", scene);
         birdPos#x + cameraOffsetX()
+
+    // ========================================================================
+    // LevelManager process（リサイクル + スコア表示）
+    // ========================================================================
+
+    /// LevelManager の process コールバック
+    /// 地面・パイプのリサイクルを行う
+    pub def levelManagerProcess(levelData: LevelManagerData,
+                                scene: Scene[NodeTag]): (LevelManagerData, Scene[NodeTag]) \ Math.Random =
+        let viewportLeftX = getViewportLeftX(scene);
+        let (groundScene, newGC, newGX) = GroundScene.recycleGrounds(
+            viewportLeftX, levelData#groundCounter, levelData#nextGroundX, scene);
+        let (pipeScene, newPC, newPX) = PipeScene.recyclePipes(
+            viewportLeftX, levelData#pipeCounter, levelData#nextPipeX, groundScene);
+        ({groundCounter = newGC, nextGroundX = newGX,
+          pipeCounter = newPC, nextPipeX = newPX},
+         pipeScene)
 
     // ========================================================================
     // 入力
@@ -321,6 +374,14 @@ mod Game {
         GameEngine.Game.isKeyPressed(GameEngine.Key.Space) or
         GameEngine.Game.isMouseButtonPressed(GameEngine.MouseButton.Left)
 
+    /// 入力を読み取り、鳥の BirdData にフラグをセットする
+    def handleInput(scene: Scene[NodeTag]): Scene[NodeTag] \ GameEngine.Game =
+        let birdData = BirdScene.getBirdData(scene);
+        let inputPressed = isFlapInputPressed();
+        let justPressed = inputPressed and not birdData#flapPressed;
+        let afterFlap = if (justPressed) BirdScene.requestFlap(scene) else scene;
+        BirdScene.setFlapPressed(inputPressed, afterFlap)
+
     // ========================================================================
     // メインループ
     // ========================================================================
@@ -329,7 +390,7 @@ mod Game {
     pub def start(fontAtlas: FontAtlas): Unit \ {GameEngine.Game, GameEngine.Audio, Math.Random} =
         gameLoop(fontAtlas, buildState(fontAtlas))
 
-    /// メインループ: フェーズごとに処理を切り替え、末尾再帰する
+    /// メインループ: 入力 → エンジン更新 → フェーズ遷移
     def gameLoop(fontAtlas: FontAtlas, state: GameState): Unit \ {GameEngine.Game, GameEngine.Audio, Math.Random} =
         if (GameEngine.Game.shouldClose()) ()
         else if (GameEngine.Game.isKeyPressed(GameEngine.Key.Escape)) ()
@@ -337,54 +398,30 @@ mod Game {
             let dt = clampDeltaTime(GameEngine.Game.getDeltaTime());
             let nextState: GameState = match state#phase {
                 case GamePhase.Playing =>
-                    let inputPressed = isFlapInputPressed();
-                    let justPressed = inputPressed and not state#flapPressed;
-                    // フラップ入力があれば速度・角速度をセット
-                    let sceneAfterFlap =
-                        if (justPressed) BirdScene.flap(state#scene)
-                        else state#scene;
-                    // スコア変化検知用に保存
-                    let prevScore = BirdScene.getBirdData(sceneAfterFlap)#score;
-                    // エンジン更新（process → physics → collision → ...）
-                    let updatedScene = engineUpdate(dt, sceneAfterFlap);
-                    // スコアが増えたら効果音を再生
-                    let newScore = BirdScene.getBirdData(updatedScene)#score;
-                    if (newScore > prevScore)
-                        GameEngine.Audio.playAudio("sfx_point")
-                    else ();
-                    // 物理積分後に回転をクランプ
-                    let sceneAfterClamp = BirdScene.clampRotation(updatedScene);
-                    // カメラを鳥に追従させる
-                    let sceneWithCamera = followCamera(sceneAfterClamp);
-                    // 地面をリサイクルする
-                    let viewportLeftX = getViewportLeftX(sceneWithCamera);
-                    let (groundRecycledScene, newCounter, newNextX) =
-                        GroundScene.recycleGrounds(
-                            viewportLeftX,
-                            state#groundCounter, state#nextGroundX,
-                            sceneWithCamera);
-                    // パイプをリサイクルする
-                    let (recycledScene, newPipeCounter, newNextPipeX) =
-                        PipeScene.recyclePipes(
-                            viewportLeftX,
-                            state#pipeCounter, state#nextPipeX,
-                            groundRecycledScene);
-                    // スコアラベルを更新
-                    let scoredScene = ScoreScene.updateScore(
-                        BirdScene.getBirdData(recycledScene)#score, recycledScene);
-                    // 鳥が Grounded になったらゲームオーバー
-                    let birdState = BirdScene.getBirdData(scoredScene)#state;
-                    let nextPhase =
-                        if (birdState == BirdState.Grounded) GamePhase.GameOver
-                        else GamePhase.Playing;
-                    {scene = scoredScene, phase = nextPhase,
-                     flapPressed = inputPressed,
-                     groundCounter = newCounter, nextGroundX = newNextX,
-                     pipeCounter = newPipeCounter, nextPipeX = newNextPipeX}
+                    let updatedScene = state#scene
+                        |> handleInput
+                        |> engineUpdate(dt);
+                    let birdData = BirdScene.getBirdData(updatedScene);
+                    if (birdData#state == BirdState.Grounded) {
+                        let score = ScoreScene.getScore(updatedScene);
+                        let sceneWithGameOver = GameOverScene.addGameOverUI(
+                            score, fontAtlas, updatedScene);
+                        {scene = sceneWithGameOver, phase = GamePhase.GameOver}
+                    } else
+                        {scene = updatedScene, phase = GamePhase.Playing}
                 case GamePhase.Menu =>
                     state
                 case GamePhase.GameOver =>
-                    state
+                    let birdData = BirdScene.getBirdData(state#scene);
+                    let inputPressed = isFlapInputPressed();
+                    let justPressed = inputPressed and not birdData#flapPressed;
+                    if (justPressed and GameOverScene.isPlayButtonClicked(
+                            GameEngine.Game.getMousePosition()))
+                        buildState(fontAtlas)
+                    else {
+                        let newScene = BirdScene.setFlapPressed(inputPressed, state#scene);
+                        {scene = newScene, phase = GamePhase.GameOver}
+                    }
             };
             GameEngine.render(nextState#scene);
             gameLoop(fontAtlas, nextState)
