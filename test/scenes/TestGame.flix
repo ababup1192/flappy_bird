@@ -42,11 +42,11 @@ def testFontAtlas(): FontAtlas = {
 
 /// テスト用ヘルパー: buildState のシーンを取得（Math.Random をモックで処理）
 def testScene(): Scene[NodeTag] =
-    withMockRandom(() -> Game.buildState(testFontAtlas())#scene)
+    withMockRandom(() -> Game.buildState(testFontAtlas(), 0)#scene)
 
 /// テスト用ヘルパー: buildState の GameState を取得（Math.Random をモックで処理）
 def testState(): GameState =
-    withMockRandom(() -> Game.buildState(testFontAtlas()))
+    withMockRandom(() -> Game.buildState(testFontAtlas(), 0))
 
 /// テスト用ヘルパー: LevelManagerData を取得
 def testLevelData(): LevelManagerData =
@@ -60,12 +60,12 @@ def vecToTuple(v: Vec2.Vec2): (Float64, Float64) = (v#x, v#y)
 // ========================================================================
 
 /// シーンには bird(+sprite+area) + camera + background(+bg_sprite)
-///   + hud(+score_label) + level_manager
+///   + hud(+score_label+best_score_label) + level_manager
 ///   + ground_0(+sprite) + ground_1(+sprite)
-///   + 3ペア × (2パイプ(+sprite) + coin) = 28 ノード
+///   + 3ペア × (2パイプ(+sprite) + coin) = 29 ノード
 @Test
 def testBuildSceneNodeCount(): Unit \ Assert =
-    Assert.assertEq(expected = 28, Scene.nodeCount(testScene()))
+    Assert.assertEq(expected = 29, Scene.nodeCount(testScene()))
 
 /// ルートノードは 16（bird, camera, background, hud, level_manager, ground_0, ground_1, pipe_0〜2 × top/bottom/coin）
 @Test
@@ -619,36 +619,38 @@ def testPipeHasSpriteChild(): Unit \ Assert =
 // Phase 4: パイプの配置（mock random=0.5 → gapY=200.0）
 // ========================================================================
 
-/// 最初のボトムパイプの位置（X=432, Y=200+202=402）
+/// 最初のボトムパイプの位置（X=576, Y=200+250=450）
 ///
 ///   gapY = 110 + (290-110) × 0.5 = 200.0
-///   bottomY = 200 + 202 = 402.0
+///   score=0 → easySpriteOffset=250
+///   bottomY = 200 + 250 = 450.0
 ///
 @Test
 def testPipe0BottomPosition(): Unit \ Assert =
     let pos = Scene.globalPosition("pipe_0_bottom", testScene());
-    Assert.assertEq(expected = (432.0, 402.0), vecToTuple(pos))
+    Assert.assertEq(expected = (576.0, 450.0), vecToTuple(pos))
 
-/// 最初のトップパイプの位置（X=432, Y=200-202=-2）
+/// 最初のトップパイプの位置（X=576, Y=200-250=-50）
 ///
-///   topY = 200 - 202 = -2.0
+///   score=0 → easySpriteOffset=250
+///   topY = 200 - 250 = -50.0
 ///
 @Test
 def testPipe0TopPosition(): Unit \ Assert =
     let pos = Scene.globalPosition("pipe_0_top", testScene());
-    Assert.assertEq(expected = (432.0, -2.0), vecToTuple(pos))
+    Assert.assertEq(expected = (576.0, -50.0), vecToTuple(pos))
 
-/// 2 番目のパイプペアの X 座標（432+182=614）
+/// 2 番目のパイプペアの位置（X=576+182=758、score=0 の初心者向けギャップ）
 @Test
 def testPipe1Position(): Unit \ Assert =
     let pos = Scene.globalPosition("pipe_1_bottom", testScene());
-    Assert.assertEq(expected = (614.0, 402.0), vecToTuple(pos))
+    Assert.assertEq(expected = (758.0, 450.0), vecToTuple(pos))
 
-/// 3 番目のパイプペアの X 座標（432+364=796）
+/// 3 番目のパイプペアの位置（X=576+364=940、score=0 の初心者向けギャップ）
 @Test
 def testPipe2Position(): Unit \ Assert =
     let pos = Scene.globalPosition("pipe_2_bottom", testScene());
-    Assert.assertEq(expected = (796.0, 402.0), vecToTuple(pos))
+    Assert.assertEq(expected = (940.0, 450.0), vecToTuple(pos))
 
 // ========================================================================
 // Phase 4: GameState パイプフィールド
@@ -659,10 +661,10 @@ def testPipe2Position(): Unit \ Assert =
 def testBuildStatePipeCounter(): Unit \ Assert =
     Assert.assertEq(expected = 3, testLevelData()#pipeCounter)
 
-/// nextPipeX は 978.0（432 + 182×3）
+/// nextPipeX は 1122.0（576 + 182×3）
 @Test
 def testBuildStateNextPipeX(): Unit \ Assert =
-    Assert.assertEq(expected = 978.0, testLevelData()#nextPipeX)
+    Assert.assertEq(expected = 1122.0, testLevelData()#nextPipeX)
 
 // ========================================================================
 // Phase 4: spawnPipePairAt
@@ -694,15 +696,15 @@ def testBirdPipeCollisionFlappingToHit(): Unit \ Assert =
 
 /// パイプ衝突時に鳥がパイプの左端に押し戻されること
 ///
-///   pipe_0_top の X=432、pipeHalfWidth=26、birdRadius=13
-///   → 押し戻し後の鳥 X = 432 - 26 - 13 = 393
+///   pipe_0_top の X=576、pipeHalfWidth=26、birdRadius=13
+///   → 押し戻し後の鳥 X = 576 - 26 - 13 = 537
 ///
 @Test
 def testBirdPipeCollisionPushBack(): Unit \ Assert =
     let pipePath = "pipe_0_top" :: Nil;
     let scene = Game.onBirdHitPipe(pipePath = pipePath, testScene());
     let birdX = Scene.globalPosition("bird", scene)#x;
-    Assert.assertEq(expected = 393.0, birdX)
+    Assert.assertEq(expected = 537.0, birdX)
 
 /// Hit 状態で再度パイプ衝突しても変化しないこと
 @Test
@@ -730,20 +732,20 @@ def testBirdPipeCollisionGroundedNoChange(): Unit \ Assert =
 @Test
 def testRecyclePipesNoOp(): Unit \ Assert =
     let (recycledScene, counter, _nextX) = withMockRandom(() ->
-        PipeScene.recyclePipes(0.0, 3, 978.0, testScene()));
+        PipeScene.recyclePipes(0.0, 3, 978.0, 10, testScene()));
     Assert.assertEq(expected = (3, 9),
         (counter, List.length(Scene.getNodesInGroup(PipeScene.pipeGroup(), recycledScene))))
 
-/// ビューポート左端を超えたパイプペアがリサイクルされること
+/// ビューポート左端を超えたパイプペアがリサイクルされること（score=10 の通常間隔 182）
 ///
-///   viewportLeft=500 のとき、pipe_0(X=432) は右端(432+26=458) < 500 で画面外
-///   → pipe_0_top, pipe_0_bottom が削除され、pipe_3 ペアが nextPipeX=978 に生成
-///   → パイプ数は変わらず 6、counter=4、nextX=1160
+///   viewportLeft=700 のとき、pipe_0(X=576) は右端(576+26=602) < 700 で画面外
+///   → pipe_0_top, pipe_0_bottom, pipe_0_coin が削除され、pipe_3 ペアが nextPipeX=978 に生成
+///   → パイプ数は変わらず 9、counter=4、nextX=978+182=1160
 ///
 @Test
 def testRecyclePipesRemovesOffScreen(): Unit \ Assert =
     let (recycledScene, counter, nextX) = withMockRandom(() ->
-        PipeScene.recyclePipes(500.0, 3, 978.0, testScene()));
+        PipeScene.recyclePipes(700.0, 3, 978.0, 10, testScene()));
     let paths = Scene.getNodesInGroup(PipeScene.pipeGroup(), recycledScene);
     Assert.assertEq(expected = (9, 4, 1160.0),
         (List.length(paths), counter, nextX))
@@ -755,7 +757,7 @@ def testRecyclePipesRemovesOffScreen(): Unit \ Assert =
 @Test
 def testRecyclePipesNewPipePosition(): Unit \ Assert =
     let (recycledScene, _counter, _nextX) = withMockRandom(() ->
-        PipeScene.recyclePipes(500.0, 3, 978.0, testScene()));
+        PipeScene.recyclePipes(700.0, 3, 978.0, 10, testScene()));
     let pos = Scene.globalPosition("pipe_3_bottom", recycledScene);
     Assert.assertEq(expected = (978.0, 402.0), vecToTuple(pos))
 
@@ -826,35 +828,35 @@ def testPlayButtonClickOutOfBoundsBelow(): Unit \ Assert =
 // Phase 6: GameOverScene — UI ノード構築
 // ========================================================================
 
-/// addGameOverUI で score < 10 の場合、5 ノード追加される（メダルなし）
-///   gameover(layer) + gameover_label + score_panel + final_score + play_button = 5
+/// addGameOverUI で score < 10 の場合、6 ノード追加される（メダルなし）
+///   gameover(layer) + gameover_label + score_panel + final_score + best_score + play_button = 6
 @Test
 def testGameOverUINodeCountNoMedal(): Unit \ Assert =
-    let baseSene = testScene();
-    let baseCount = Scene.nodeCount(baseSene);
-    let scene = GameOverScene.addGameOverUI(5, testFontAtlas(), baseSene);
-    Assert.assertEq(expected = 5, Scene.nodeCount(scene) - baseCount)
+    let baseScene = testScene();
+    let baseCount = Scene.nodeCount(baseScene);
+    let scene = GameOverScene.addGameOverUI(5, 0, testFontAtlas(), baseScene);
+    Assert.assertEq(expected = 6, Scene.nodeCount(scene) - baseCount)
 
-/// addGameOverUI で score >= 10 の場合、6 ノード追加される（メダルあり）
-///   gameover(layer) + gameover_label + score_panel + medal + final_score + play_button = 6
+/// addGameOverUI で score >= 10 の場合、7 ノード追加される（メダルあり）
+///   gameover(layer) + gameover_label + score_panel + medal + final_score + best_score + play_button = 7
 @Test
 def testGameOverUINodeCountWithMedal(): Unit \ Assert =
-    let baseSene = testScene();
-    let baseCount = Scene.nodeCount(baseSene);
-    let scene = GameOverScene.addGameOverUI(15, testFontAtlas(), baseSene);
-    Assert.assertEq(expected = 6, Scene.nodeCount(scene) - baseCount)
+    let baseScene = testScene();
+    let baseCount = Scene.nodeCount(baseScene);
+    let scene = GameOverScene.addGameOverUI(15, 15, testFontAtlas(), baseScene);
+    Assert.assertEq(expected = 7, Scene.nodeCount(scene) - baseCount)
 
 /// addGameOverUI 後に HUD スコアラベルが非表示になること
 @Test
 def testGameOverHidesHudScore(): Unit \ Assert =
-    let scene = GameOverScene.addGameOverUI(0, testFontAtlas(), testScene());
+    let scene = GameOverScene.addGameOverUI(0, 0, testFontAtlas(), testScene());
     match Scene.getEngineNode(ScoreScene.scoreLabelPath(), scene) {
         case Some(EngineNode.Label2DWithState(label, _)) =>
             Assert.assertFalse(CanvasItem.isVisible(label))
         case _ => bug!("score_label not found")
     }
 
-/// buildState のノード数は GameOver UI 追加前と同じ（28）
+/// buildState のノード数は GameOver UI 追加前と同じ（29）
 @Test
 def testBuildStateNodeCountUnchanged(): Unit \ Assert =
-    Assert.assertEq(expected = 28, Scene.nodeCount(testScene()))
+    Assert.assertEq(expected = 29, Scene.nodeCount(testScene()))

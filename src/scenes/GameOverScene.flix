@@ -8,6 +8,7 @@
 //     ├── Sprite2DWithState(score_panel, NoTag)        // スコアパネル背景
 //     ├── Sprite2DWithState(medal, NoTag)              // メダル（score>=10 のみ）
 //     ├── Label2DWithState(final_score, NoTag)         // パネル上のスコア数値
+//     ├── Label2DWithState(best_score, NoTag)          // パネル上のベストスコア数値
 //     └── Sprite2DWithState(play_button, NoTag)        // Play ボタン
 
 mod GameOverScene {
@@ -31,6 +32,9 @@ mod GameOverScene {
     /// 最終スコアラベルのノード名
     def finalScoreName(): String = "final_score"
 
+    /// ベストスコアラベルのノード名
+    def bestScoreName(): String = "best_score"
+
     /// Play ボタンのノード名
     def playButtonName(): String = "play_button"
 
@@ -47,8 +51,11 @@ mod GameOverScene {
     /// メダルの位置（パネル左側）
     def medalPos(): Vec2.Vec2 = {x = 76.0, y = 280.0}
 
-    /// 最終スコアの位置（パネル右上）
-    def finalScorePos(): Vec2.Vec2 = {x = 200.0, y = 264.0}
+    /// 最終スコアの位置（パネル右上、"SCORE" テキストと同じ行）
+    def finalScorePos(): Vec2.Vec2 = {x = 220.0, y = 253.0}
+
+    /// ベストスコアの位置（パネル右下、"BEST" テキストと同じ行）
+    def bestScorePos(): Vec2.Vec2 = {x = 220.0, y = 295.0}
 
     /// Play ボタンの位置
     def playButtonPos(): Vec2.Vec2 = {x = 144.0, y = 390.0}
@@ -88,15 +95,20 @@ mod GameOverScene {
     // ========================================================================
 
     /// ゲームオーバー UI をシーンに追加する
-    /// CanvasLayer (layer=2) に GAME OVER ラベル、スコアパネル、メダル、スコア数値、Play ボタンを配置する
+    /// CanvasLayer (layer=2) に GAME OVER ラベル、スコアパネル、メダル、スコア/ベストスコア数値、Play ボタンを配置する
     /// HUD のスコアラベルを非表示にする
-    pub def addGameOverUI(score: Int32, fontAtlas: FontAtlas, scene: Scene[NodeTag]): Scene[NodeTag] =
+    pub def addGameOverUI(score: Score, bestScore: BestScore, fontAtlas: FontAtlas, scene: Scene[NodeTag]): Scene[NodeTag] =
         let layer = CanvasLayer.make(2);
         let gameOverLabel = Sprite2D.make("label_game_over", gameOverLabelPos(), scale2x());
         let panel = Sprite2D.make("panel_score", scorePanelPos(), scale2x());
         let scoreLabel = Label2D.make("${score}", fontAtlas, 30.0)
             |> Label2D.setCentered(true)
-            |> Node2D.setPosition(finalScorePos());
+            |> Node2D.setPosition(finalScorePos())
+            |> CanvasItem.setZIndex(1);
+        let bestLabel = Label2D.make("${bestScore}", fontAtlas, 30.0)
+            |> Label2D.setCentered(true)
+            |> Node2D.setPosition(bestScorePos())
+            |> CanvasItem.setZIndex(1);
         let playButton = Sprite2D.make("button_play_normal", playButtonPos(), scale2x());
         let sceneWithLayer = scene
             // HUD のスコアラベルを非表示にする
@@ -111,6 +123,8 @@ mod GameOverScene {
                 EngineNode.Sprite2DWithState(panel, NodeTag.NoTag))
             |> Scene.addChild(layerName(), finalScoreName(),
                 EngineNode.Label2DWithState(scoreLabel, NodeTag.NoTag))
+            |> Scene.addChild(layerName(), bestScoreName(),
+                EngineNode.Label2DWithState(bestLabel, NodeTag.NoTag))
             |> Scene.addChild(layerName(), playButtonName(),
                 EngineNode.Sprite2DWithState(playButton, NodeTag.NoTag));
         // メダルを追加（score >= 10 の場合のみ）

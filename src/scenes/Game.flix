@@ -50,6 +50,12 @@ pub type alias LevelManagerData = {
 // ノードタグ
 // ========================================================================
 
+/// スコア値の型エイリアス
+pub type alias Score = Int32
+
+/// ベストスコア値の型エイリアス
+pub type alias BestScore = Int32
+
 /// 各ノードに付与する識別タグ（Scene[NodeTag] の型パラメータ）
 pub enum NodeTag {
     /// 鳥の RigidBody2D に付与。BirdData を保持する
@@ -63,7 +69,9 @@ pub enum NodeTag {
     /// パイプ間の採点用 Area2D に付与
     case Coin
     /// スコアラベルに付与。現在のスコア値を保持する
-    case Score(Int32)
+    case ScoreLabel(Score)
+    /// ベストスコアラベルに付与。セッション中のベストスコアを保持する
+    case BestScoreLabel(BestScore)
     /// レベル管理ノード（リサイクルカウンタを保持）
     case LevelManager(LevelManagerData)
     /// タグ不要なノード（スプライト子ノード等）
@@ -217,13 +225,14 @@ mod Game {
     // ========================================================================
 
     /// ゲームの初期状態を構築する
-    pub def buildState(fontAtlas: FontAtlas): GameState \ Math.Random =
+    /// bestScore: セッション中のベストスコア（初回は 0）
+    pub def buildState(fontAtlas: FontAtlas, bestScore: BestScore): GameState \ Math.Random =
         let (sceneWithGrounds, groundCounter, nextGroundX) =
             Scene.empty()
                 |> addBackground
                 |> BirdScene.addBird
                 |> addCamera
-                |> ScoreScene.addHud(fontAtlas)
+                |> ScoreScene.addHud(fontAtlas, bestScore)
                 |> GroundScene.addGrounds;
         let (sceneWithPipes, pipeCounter, nextPipeX) =
             PipeScene.addPipes(sceneWithGrounds);
@@ -359,8 +368,9 @@ mod Game {
         let viewportLeftX = getViewportLeftX(scene);
         let (groundScene, newGC, newGX) = GroundScene.recycleGrounds(
             viewportLeftX, levelData#groundCounter, levelData#nextGroundX, scene);
+        let score = ScoreScene.getScore(groundScene);
         let (pipeScene, newPC, newPX) = PipeScene.recyclePipes(
-            viewportLeftX, levelData#pipeCounter, levelData#nextPipeX, groundScene);
+            viewportLeftX, levelData#pipeCounter, levelData#nextPipeX, score, groundScene);
         ({groundCounter = newGC, nextGroundX = newGX,
           pipeCounter = newPC, nextPipeX = newPX},
          pipeScene)
@@ -388,7 +398,7 @@ mod Game {
 
     /// ゲームのエントリポイント
     pub def start(fontAtlas: FontAtlas): Unit \ {GameEngine.Game, GameEngine.Audio, Math.Random} =
-        gameLoop(fontAtlas, buildState(fontAtlas))
+        gameLoop(fontAtlas, buildState(fontAtlas, 0))
 
     /// メインループ: 入力 → エンジン更新 → フェーズ遷移
     def gameLoop(fontAtlas: FontAtlas, state: GameState): Unit \ {GameEngine.Game, GameEngine.Audio, Math.Random} =
@@ -403,9 +413,9 @@ mod Game {
                         |> engineUpdate(dt);
                     let birdData = BirdScene.getBirdData(updatedScene);
                     if (birdData#state == BirdState.Grounded) {
-                        let score = ScoreScene.getScore(updatedScene);
+                        let (score, newBest, sceneWithBest) = ScoreScene.finalizeScore(updatedScene);
                         let sceneWithGameOver = GameOverScene.addGameOverUI(
-                            score, fontAtlas, updatedScene);
+                            score, newBest, fontAtlas, sceneWithBest);
                         {scene = sceneWithGameOver, phase = GamePhase.GameOver}
                     } else
                         {scene = updatedScene, phase = GamePhase.Playing}
@@ -416,9 +426,10 @@ mod Game {
                     let inputPressed = isFlapInputPressed();
                     let justPressed = inputPressed and not birdData#flapPressed;
                     if (justPressed and GameOverScene.isPlayButtonClicked(
-                            GameEngine.Game.getMousePosition()))
-                        buildState(fontAtlas)
-                    else {
+                            GameEngine.Game.getMousePosition())) {
+                        let bestScore = ScoreScene.getBestScore(state#scene);
+                        buildState(fontAtlas, bestScore)
+                    } else {
                         let newScene = BirdScene.setFlapPressed(inputPressed, state#scene);
                         {scene = newScene, phase = GamePhase.GameOver}
                     }

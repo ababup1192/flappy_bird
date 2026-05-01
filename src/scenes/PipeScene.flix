@@ -3,6 +3,7 @@
 // パイプは StaticBody2D + 子 Sprite2D で構成される。
 // 上下ペアでギャップを作り、鳥が通過する障害物となる。
 // 画面左端を超えたパイプはリサイクルして右端に再配置する。
+// スコアが低いうちは上下パイプの隙間を広くし、難易度を段階的に上げる。
 //
 //   StaticBody2DWithState(body, Pipe)
 //     └── Sprite2DWithState(sprite, NoTag)
@@ -22,8 +23,13 @@ mod PipeScene {
     /// ギャップ中心 Y 座標の最大値
     def gapYMax(): Float64 = 290.0
 
-    /// ギャップ中心からパイプ中心までの距離
-    def spriteOffset(): Float64 = 202.0
+    /// ギャップ中心からパイプ中心までの距離（通常難易度: score >= 10）
+    /// 縦ギャップ = 2 × (202 - 160) = 84px
+    def normalSpriteOffset(): Float64 = 202.0
+
+    /// ギャップ中心からパイプ中心までの距離（初心者向け: score = 0）
+    /// 縦ギャップ = 2 × (250 - 160) = 180px
+    def easySpriteOffset(): Float64 = 250.0
 
     /// パイプの衝突形状（矩形 52×320 = 参考実装 26×160 の 2 倍）
     def pipeCollisionShape(): CollisionShape2D =
@@ -32,11 +38,26 @@ mod PipeScene {
     /// パイプペア間の水平距離
     def pipeSpacingX(): Float64 = 182.0
 
+    /// 難易度が通常に到達するスコア閾値
+    def difficultyMaxScore(): Int32 = 10
+
+    /// スコアに応じた上下パイプ間のギャップ用オフセットを返す
+    /// score 0 → 250（初心者向けの広いギャップ 180px）
+    /// score 10 以上 → 202（通常難易度のギャップ 84px）
+    /// score 1〜9 → 線形補間で徐々に狭くなる
+    pub def gapSpriteOffset(score: Int32): Float64 =
+        if (score >= difficultyMaxScore()) normalSpriteOffset()
+        else {
+            let t = Int32.toFloat64(score) / Int32.toFloat64(difficultyMaxScore());
+            easySpriteOffset() + (normalSpriteOffset() - easySpriteOffset()) * t
+        }
+
     /// 初期パイプペア数
     def initialPipeCount(): Int32 = 3
 
-    /// 最初のパイプの X 座標（鳥の初期 X 144 + 画面幅 288）
-    def firstPipeX(): Float64 = 432.0
+    /// 最初のパイプの X 座標（鳥の初期 X 144 + 画面幅 288 × 1.5）
+    /// 鳥が操作に慣れる猶予を持たせるために画面 1.5 枚分先に配置
+    def firstPipeX(): Float64 = 576.0
 
     /// パイプの半幅（画面外判定に使用）
     pub def pipeHalfWidth(): Float64 = 26.0
@@ -84,32 +105,41 @@ mod PipeScene {
             |> Scene.addToGroup(coinName :: Nil, pipeGroup())
 
     /// パイプペアを指定位置に決定的に追加する（テスト用公開）
+    /// 通常難易度のオフセット（normalSpriteOffset）を使用する
     /// counter: ペア番号（ユニーク名生成用）
     /// x: ペアの X 座標
     /// gapY: ギャップ中心の Y 座標
     pub def spawnPipePairAt(counter: Int32, x: Float64, gapY: Float64,
                             scene: Scene[NodeTag]): Scene[NodeTag] =
         scene
-            |> spawnPipe("pipe_${counter}_top", x, gapY - spriteOffset(), topTexture())
-            |> spawnPipe("pipe_${counter}_bottom", x, gapY + spriteOffset(), bottomTexture())
+            |> spawnPipe("pipe_${counter}_top", x, gapY - normalSpriteOffset(), topTexture())
+            |> spawnPipe("pipe_${counter}_bottom", x, gapY + normalSpriteOffset(), bottomTexture())
             |> spawnCoin(counter, x, gapY)
 
     /// パイプペアをランダムな gapY で追加する
+    /// スコアに応じた縦ギャップで配置する
     /// counter: ペア番号
     /// x: ペアの X 座標
-    def spawnPipePair(counter: Int32, x: Float64,
+    /// score: 現在のスコア（ギャップ幅の決定に使用）
+    def spawnPipePair(counter: Int32, x: Float64, score: Int32,
                       scene: Scene[NodeTag]): Scene[NodeTag] \ Math.Random =
         let gapY = gapYMin() + (gapYMax() - gapYMin()) * Math.Random.randomFloat64();
-        spawnPipePairAt(counter, x, gapY, scene)
+        let offset = gapSpriteOffset(score);
+        scene
+            |> spawnPipe("pipe_${counter}_top", x, gapY - offset, topTexture())
+            |> spawnPipe("pipe_${counter}_bottom", x, gapY + offset, bottomTexture())
+            |> spawnCoin(counter, x, gapY)
 
     /// 初期パイプ（3 ペア）を配置する
+    /// score=0 の初心者向けギャップで配置する
     /// 戻り値: (更新されたシーン, 次のペア番号, 次のペア X 座標)
     pub def addPipes(scene: Scene[NodeTag]): (Scene[NodeTag], Int32, Float64) \ Math.Random =
+        let spacing = pipeSpacingX();
         List.range(0, initialPipeCount())
             |> List.foldLeft((acc, _i) ->
                 let (accScene, counter, nextX) = acc;
-                let newScene = spawnPipePair(counter, nextX, accScene);
-                (newScene, counter + 1, nextX + pipeSpacingX())
+                let newScene = spawnPipePair(counter, nextX, 0, accScene);
+                (newScene, counter + 1, nextX + spacing)
             , (scene, 0, firstPipeX()))
 
     // ========================================================================
@@ -120,9 +150,11 @@ mod PipeScene {
     /// viewportLeftX: カメラが映す左端の X 座標
     /// pipeCounter: 次のペア番号（ユニーク名生成用）
     /// nextPipeX: 次のペアの X 座標
+    /// score: 現在のスコア（縦ギャップの決定に使用）
     /// 戻り値: (更新されたシーン, 更新されたペア番号, 更新された次のペア X)
     pub def recyclePipes(viewportLeftX: Float64,
                          pipeCounter: Int32, nextPipeX: Float64,
+                         score: Int32,
                          scene: Scene[NodeTag]): (Scene[NodeTag], Int32, Float64) \ Math.Random =
         let paths = Scene.getNodesInGroup(pipeGroup(), scene);
         let offScreenPaths = List.filter(path ->
@@ -134,11 +166,12 @@ mod PipeScene {
             Scene.removeAt(path, accScene)
         , scene, offScreenPaths);
         // 削除数 / 3 = ペア数を再スポーン（top + bottom + coin = 3 ノード/ペア）
+        let spacing = pipeSpacingX();
         let pairsToSpawn = List.length(offScreenPaths) / 3;
         List.range(0, pairsToSpawn)
             |> List.foldLeft((acc, _i) ->
                 let (accScene, counter, nextX) = acc;
-                let newScene = spawnPipePair(counter, nextX, accScene);
-                (newScene, counter + 1, nextX + pipeSpacingX())
+                let newScene = spawnPipePair(counter, nextX, score, accScene);
+                (newScene, counter + 1, nextX + spacing)
             , (cleanedScene, pipeCounter, nextPipeX))
 }
