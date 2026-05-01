@@ -68,9 +68,8 @@ mod PipeScene {
     /// ボトムパイプのテクスチャ名
     def bottomTexture(): String = "pipe_green_bottom"
 
-    /// コインの衝突形状（ギャップ中央の薄い矩形）
-    def coinCollisionShape(): CollisionShape2D =
-        CollisionShape2D.RectShape2D({width = 4.0, height = 42.0})
+    /// パイプの衝突形状の半高（320 / 2）
+    def pipeHalfHeight(): Float64 = 160.0
 
     // ========================================================================
     // シーン構築
@@ -93,11 +92,13 @@ mod PipeScene {
                 EngineNode.Sprite2DWithState(sprite, NodeTag.NoTag))
 
     /// コイン（採点用 Area2D）をギャップ中央に追加する
+    /// ギャップ全体をカバーする薄い矩形センサーで、確実に通過を検知する
     /// monitoring = false: コイン自身は重なりを検知しない（検知される側のみ）
-    def spawnCoin(counter: Int32, x: Float64, gapY: Float64,
+    def spawnCoin(counter: Int32, x: Float64, gapY: Float64, gapHeight: Float64,
                   scene: Scene[NodeTag]): Scene[NodeTag] =
         let coinName = "pipe_${counter}_coin";
-        let area = Area2D.make({x = x, y = gapY}, coinCollisionShape())
+        let coinShape = CollisionShape2D.RectShape2D({width = 4.0, height = gapHeight});
+        let area = Area2D.make({x = x, y = gapY}, coinShape)
             |> Area2D.setMonitoring(false);
         scene
             |> Scene.addNode(coinName,
@@ -111,10 +112,11 @@ mod PipeScene {
     /// gapY: ギャップ中心の Y 座標
     pub def spawnPipePairAt(counter: Int32, x: Float64, gapY: Float64,
                             scene: Scene[NodeTag]): Scene[NodeTag] =
+        let gapHeight = 2.0 * (normalSpriteOffset() - pipeHalfHeight());
         scene
             |> spawnPipe("pipe_${counter}_top", x, gapY - normalSpriteOffset(), topTexture())
             |> spawnPipe("pipe_${counter}_bottom", x, gapY + normalSpriteOffset(), bottomTexture())
-            |> spawnCoin(counter, x, gapY)
+            |> spawnCoin(counter, x, gapY, gapHeight)
 
     /// パイプペアをランダムな gapY で追加する
     /// スコアに応じた縦ギャップで配置する
@@ -125,10 +127,11 @@ mod PipeScene {
                       scene: Scene[NodeTag]): Scene[NodeTag] \ Math.Random =
         let gapY = gapYMin() + (gapYMax() - gapYMin()) * Math.Random.randomFloat64();
         let offset = gapSpriteOffset(score);
+        let gapHeight = 2.0 * (offset - pipeHalfHeight());
         scene
             |> spawnPipe("pipe_${counter}_top", x, gapY - offset, topTexture())
             |> spawnPipe("pipe_${counter}_bottom", x, gapY + offset, bottomTexture())
-            |> spawnCoin(counter, x, gapY)
+            |> spawnCoin(counter, x, gapY, gapHeight)
 
     /// 初期パイプ（3 ペア）を配置する
     /// score=0 の初心者向けギャップで配置する

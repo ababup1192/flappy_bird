@@ -56,8 +56,8 @@ mod GameOverScene {
     /// スコアパネルの位置
     def scorePanelPos(): Vec2.Vec2 = {x = 144.0, y = 280.0}
 
-    /// メダルの位置（パネル左側）
-    def medalPos(): Vec2.Vec2 = {x = 76.0, y = 280.0}
+    /// メダルの位置（パネル左側、パネル中心より少し下）
+    def medalPos(): Vec2.Vec2 = {x = 76.0, y = 286.0}
 
     /// 最終スコアの位置（パネル右上、"SCORE" テキストと同じ行）
     def finalScorePos(): Vec2.Vec2 = {x = 220.0, y = 253.0}
@@ -161,10 +161,13 @@ mod GameOverScene {
                 EngineNode.Label2DWithState(bestLabel, NodeTag.NoTag))
             |> Scene.addChild(layerName(), playButtonName(),
                 EngineNode.Sprite2DWithState(playButton, NodeTag.NoTag));
-        // メダルを追加（score >= 10 の場合のみ、非表示で追加）
-        match getMedalTexture(score) {
+        // メダルを追加（bestScore >= 10 の場合のみ、非表示で追加）
+        // bestScore を使うことで、一度取得したメダルは以降も表示され続け、
+        // ベストスコア更新時に新しいメダルに差し替わる
+        match getMedalTexture(bestScore) {
             case Some(medalTex) =>
                 let medalSprite = Sprite2D.make(medalTex, medalPos(), scale2x())
+                    |> CanvasItem.setZIndex(1)
                     |> CanvasItem.hide;
                 sceneWithLayer
                     |> Scene.addChild(layerName(), medalName(),

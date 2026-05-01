@@ -111,7 +111,7 @@ instance Node[NodeTag] {
                   _path: NodePath, scene: Scene[NodeTag]): (EngineNode[NodeTag], Scene[NodeTag]) \ Math.Random =
         match node {
             case EngineNode.RigidBody2DWithState(body, NodeTag.Bird(birdData)) =>
-                let (newBody, newData) = BirdScene.birdProcess(body, birdData);
+                let (newBody, newData) = BirdScene.birdProcess(delta, body, birdData);
                 checked_ecast((EngineNode.RigidBody2DWithState(newBody, NodeTag.Bird(newData)), scene))
             case EngineNode.Camera2DWithState(cam, NodeTag.CameraShake(shakeData)) =>
                 let birdPos = Scene.globalPosition("bird", scene);
@@ -273,6 +273,23 @@ mod Game {
             |> Scene.addNode(levelManagerName(),
                 EngineNode.Sprite2DWithState(manager, NodeTag.LevelManager(levelData)));
         {scene = scene, phase = GamePhase.Playing}
+
+    /// メニュー画面の初期状態を構築する
+    /// 背景 + 鳥(Flying) + カメラ + HUD(スコア非表示) + 地面 + メニュー UI
+    /// パイプ・LevelManager なし
+    pub def buildMenuState(fontAtlas: FontAtlas, bestScore: BestScore): GameState =
+        let (sceneWithGrounds, _groundCounter, _nextGroundX) =
+            Scene.empty()
+                |> addBackground
+                |> BirdScene.addBirdForMenu
+                |> addCamera
+                |> ScoreScene.addHud(fontAtlas, bestScore)
+                |> GroundScene.addGrounds;
+        let scene = sceneWithGrounds
+            |> MenuScene.addMenuUI
+            |> Scene.mapEngineNode(ScoreScene.scoreLabelPath(),
+                EngineNode.mapLabel2D(CanvasItem.hide));
+        {scene = scene, phase = GamePhase.Menu}
 
     // ========================================================================
     // シーン構築ヘルパー
@@ -453,7 +470,7 @@ mod Game {
 
     /// ゲームのエントリポイント
     pub def start(fontAtlas: FontAtlas): Unit \ {GameEngine.Game, GameEngine.Audio, Math.Random} =
-        gameLoop(fontAtlas, buildState(fontAtlas, 0))
+        gameLoop(fontAtlas, buildMenuState(fontAtlas, 0))
 
     /// メインループ: 入力 → エンジン更新 → フェーズ遷移
     def gameLoop(fontAtlas: FontAtlas, state: GameState): Unit \ {GameEngine.Game, GameEngine.Audio, Math.Random} =
@@ -476,7 +493,19 @@ mod Game {
                     } else
                         {scene = updatedScene, phase = GamePhase.Playing}
                 case GamePhase.Menu =>
-                    state
+                    let updatedScene = state#scene
+                        |> engineUpdate(dt);
+                    let inputPressed = isFlapInputPressed();
+                    let birdData = BirdScene.getBirdData(updatedScene);
+                    let justPressed = inputPressed and not birdData#flapPressed;
+                    if (justPressed) {
+                        GameEngine.Audio.playAudio("sfx_swooshing");
+                        let bestScore = ScoreScene.getBestScore(updatedScene);
+                        buildState(fontAtlas, bestScore)
+                    } else {
+                        let newScene = BirdScene.setFlapPressed(inputPressed, updatedScene);
+                        {scene = newScene, phase = GamePhase.Menu}
+                    }
                 case GamePhase.GameOver =>
                     let animScene = GameOverScene.updateAnimation(dt, state#scene);
                     let animFinished = GameOverScene.isAnimationFinished(animScene);
@@ -486,7 +515,7 @@ mod Game {
                     if (justPressed and animFinished and GameOverScene.isPlayButtonClicked(
                             GameEngine.Game.getMousePosition())) {
                         let bestScore = ScoreScene.getBestScore(animScene);
-                        buildState(fontAtlas, bestScore)
+                        checked_ecast(buildMenuState(fontAtlas, bestScore))
                     } else {
                         let newScene = BirdScene.setFlapPressed(inputPressed, animScene);
                         {scene = newScene, phase = GamePhase.GameOver}

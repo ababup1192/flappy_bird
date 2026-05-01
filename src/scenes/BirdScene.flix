@@ -21,7 +21,7 @@ mod BirdScene {
     /// speed: 横方向の移動速度（px/秒）
     /// flapRequested: フラップリクエスト（次の physicsProcess で適用される）
     /// flapPressed: 前フレームでフラップ入力があったか（連続入力防止用）
-    pub type alias BirdData = {state = BirdState, speed = Float64, flapRequested = Bool, flapPressed = Bool}
+    pub type alias BirdData = {state = BirdState, speed = Float64, flapRequested = Bool, flapPressed = Bool, bobbingPhase = Float64}
 
     // ========================================================================
     // 定数 — ノード名・パス
@@ -110,7 +110,7 @@ mod BirdScene {
             Vec2.zero(),
             {x = 2.0, y = 2.0});
         let area = Area2D.make(Vec2.zero(), birdCollisionShape());
-        let birdData: BirdData = {state = BirdState.Flapping, speed = birdSpeed(), flapRequested = false, flapPressed = false};
+        let birdData: BirdData = {state = BirdState.Flapping, speed = birdSpeed(), flapRequested = false, flapPressed = false, bobbingPhase = 0.0};
         scene
             |> Scene.addNode(name(),
                 EngineNode.RigidBody2DWithState(body, NodeTag.Bird(birdData)))
@@ -118,6 +118,50 @@ mod BirdScene {
                 EngineNode.AnimSprite2DWithState(sprite, NodeTag.NoTag))
             |> Scene.addChild(name(), areaName(),
                 EngineNode.Area2DWithState(area, NodeTag.BirdArea))
+
+    /// メニュー画面用の鳥をシーンに追加する
+    /// Flying 状態・重力なし・速度ゼロで配置。ボビングアニメーションのみ行う
+    pub def addBirdForMenu(scene: Scene[NodeTag]): Scene[NodeTag] =
+        let body = RigidBody2D.make(startPosition(), birdCollisionShape())
+            |> RigidBody2D.setGravityScale(0.0)
+            |> RigidBody2D.setLinearVelocity(Vec2.zero());
+        let sprite = AnimatedSprite2D.make(
+            birdAnimations(),
+            initialAnimation = flapAnimName(),
+            fps = 10.0,
+            Vec2.zero(),
+            {x = 2.0, y = 2.0});
+        let area = Area2D.make(Vec2.zero(), birdCollisionShape());
+        let birdData: BirdData = {state = BirdState.Flying, speed = 0.0, flapRequested = false, flapPressed = false, bobbingPhase = 0.0};
+        scene
+            |> Scene.addNode(name(),
+                EngineNode.RigidBody2DWithState(body, NodeTag.Bird(birdData)))
+            |> Scene.addChild(name(), spriteName(),
+                EngineNode.AnimSprite2DWithState(sprite, NodeTag.NoTag))
+            |> Scene.addChild(name(), areaName(),
+                EngineNode.Area2DWithState(area, NodeTag.BirdArea))
+
+    // ========================================================================
+    // Flying → Flapping 遷移
+    // ========================================================================
+
+    /// Flying 状態から Flapping に遷移する（メニュー → プレイ開始）
+    /// 重力を復活させ、横速度を設定し、位置をリセットする
+    pub def startFlapping(scene: Scene[NodeTag]): Scene[NodeTag] =
+        scene |> mapBirdBody((body, birdData) ->
+            match birdData#state {
+                case BirdState.Flying =>
+                    let newBody = body
+                        |> Node2D.setPosition(startPosition())
+                        |> Node2D.setRotation(0.0)
+                        |> RigidBody2D.setGravityScale(birdGravityScale())
+                        |> RigidBody2D.setLinearVelocity({x = birdSpeed(), y = 0.0})
+                        |> RigidBody2D.setAngularVelocity(0.0);
+                    let newData: BirdData = {state = BirdState.Flapping, speed = birdSpeed(),
+                        flapRequested = false, flapPressed = false, bobbingPhase = 0.0};
+                    (newBody, newData)
+                case _ => (body, birdData)
+            })
 
     // ========================================================================
     // フラップ
@@ -183,10 +227,16 @@ mod BirdScene {
     // process コールバック（毎フレーム先頭で呼ばれる）
     // ========================================================================
 
-    /// process コールバック: 前フレームの物理積分後の回転角をクランプする
-    /// 回転が -30° 未満なら -30° に固定し角速度を 0 にする
-    pub def birdProcess(body: RigidBody2D, birdData: BirdData): (RigidBody2D, BirdData) =
+    /// process コールバック: Flying 状態ではボビング、Flapping 状態では回転クランプ
+    pub def birdProcess(delta: Float64, body: RigidBody2D, birdData: BirdData): (RigidBody2D, BirdData) =
         match birdData#state {
+            case BirdState.Flying =>
+                let newPhase = birdData#bobbingPhase + delta;
+                let baseY = startPosition()#y;
+                let offsetY = Vec2.sin(newPhase * 3.0) * 8.0;
+                let pos = Node2D.getPosition(body);
+                (Node2D.setPosition({x = pos#x, y = baseY + offsetY}, body),
+                 {bobbingPhase = newPhase | birdData})
             case BirdState.Flapping =>
                 let rot = Node2D.getRotation(body);
                 if (rot < minRotation())

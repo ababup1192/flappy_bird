@@ -856,6 +856,15 @@ def testGameOverUINodeCountWithMedal(): Unit \ Assert =
     let scene = GameOverScene.addGameOverUI(15, 15, testFontAtlas(), baseScene);
     Assert.assertEq(expected = 7, Scene.nodeCount(scene) - baseCount)
 
+/// 今回のスコアが低くても bestScore >= 10 ならメダルが表示されること（メダル永続化）
+///   score=3, bestScore=15 → bronze メダルが表示される → 7 ノード追加
+@Test
+def testGameOverUINodeCountMedalFromBestScore(): Unit \ Assert =
+    let baseScene = testScene();
+    let baseCount = Scene.nodeCount(baseScene);
+    let scene = GameOverScene.addGameOverUI(3, 15, testFontAtlas(), baseScene);
+    Assert.assertEq(expected = 7, Scene.nodeCount(scene) - baseCount)
+
 /// addGameOverUI 後に HUD スコアラベルが非表示になること
 @Test
 def testGameOverHidesHudScore(): Unit \ Assert =
@@ -870,3 +879,100 @@ def testGameOverHidesHudScore(): Unit \ Assert =
 @Test
 def testBuildStateNodeCountUnchanged(): Unit \ Assert =
     Assert.assertEq(expected = 29, Scene.nodeCount(testScene()))
+
+// ========================================================================
+// Phase 7: MenuScene — メニュー画面
+// ========================================================================
+
+/// テスト用ヘルパー: buildMenuState のシーンを取得
+def testMenuScene(): Scene[NodeTag] =
+    Game.buildMenuState(testFontAtlas(), 0)#scene
+
+/// テスト用ヘルパー: buildMenuState の GameState を取得
+def testMenuState(): GameState =
+    Game.buildMenuState(testFontAtlas(), 0)
+
+/// メニューの初期フェーズは Menu
+@Test
+def testMenuStatePhase(): Unit \ Assert =
+    Assert.assertEq(expected = GamePhase.Menu, testMenuState()#phase)
+
+/// メニュー画面の鳥の状態は Flying
+@Test
+def testMenuBirdStateFlying(): Unit \ Assert =
+    let birdData = BirdScene.getBirdData(testMenuScene());
+    Assert.assertEq(expected = BirdState.Flying, birdData#state)
+
+/// メニュー画面の鳥の重力は 0
+@Test
+def testMenuBirdGravityZero(): Unit \ Assert =
+    match Scene.getEngineNode("bird" :: Nil, testMenuScene()) {
+        case Some(EngineNode.RigidBody2DWithState(body, _)) =>
+            Assert.assertEq(expected = 0.0, RigidBody2D.getGravityScale(body))
+        case _ => bug!("bird not found")
+    }
+
+/// メニュー画面の鳥の速度は 0
+@Test
+def testMenuBirdVelocityZero(): Unit \ Assert =
+    match Scene.getEngineNode("bird" :: Nil, testMenuScene()) {
+        case Some(EngineNode.RigidBody2DWithState(body, _)) =>
+            Assert.assertEq(expected = (0.0, 0.0),
+                vecToTuple(RigidBody2D.getLinearVelocity(body)))
+        case _ => bug!("bird not found")
+    }
+
+/// メニュー画面にタイトルロゴが存在すること
+@Test
+def testMenuTitleLogoExists(): Unit \ Assert =
+    match Scene.getEngineNode(MenuScene.titleLogoPath(), testMenuScene()) {
+        case Some(EngineNode.Sprite2DWithState(_, _)) =>
+            Assert.assertTrue(true)
+        case _ => bug!("title_logo not found")
+    }
+
+/// メニュー画面に操作説明画像が存在すること
+@Test
+def testMenuInstructionsExists(): Unit \ Assert =
+    match Scene.getEngineNode(MenuScene.instructionsPath(), testMenuScene()) {
+        case Some(EngineNode.Sprite2DWithState(_, _)) =>
+            Assert.assertTrue(true)
+        case _ => bug!("instructions_img not found")
+    }
+
+/// メニュー画面のスコアラベルが非表示であること
+@Test
+def testMenuScoreLabelHidden(): Unit \ Assert =
+    match Scene.getEngineNode(ScoreScene.scoreLabelPath(), testMenuScene()) {
+        case Some(EngineNode.Label2DWithState(label, _)) =>
+            Assert.assertFalse(CanvasItem.isVisible(label))
+        case _ => bug!("score_label not found")
+    }
+
+/// メニュー画面にパイプがないこと
+@Test
+def testMenuNoPipes(): Unit \ Assert =
+    let paths = Scene.getNodesInGroup(PipeScene.pipeGroup(), testMenuScene());
+    Assert.assertEq(expected = 0, List.length(paths))
+
+/// メニュー画面に地面があること
+@Test
+def testMenuHasGrounds(): Unit \ Assert =
+    let paths = Scene.getNodesInGroup(GroundScene.groundGroup(), testMenuScene());
+    Assert.assertEq(expected = 2, List.length(paths))
+
+/// メニュー画面のノード数は 16
+///   background(+bg_sprite) + bird(+sprite+area) + camera + hud(+score_label+best_score_label)
+///   + ground_0(+sprite) + ground_1(+sprite) + menu(+title_logo+instructions_img) = 16
+@Test
+def testMenuNodeCount(): Unit \ Assert =
+    Assert.assertEq(expected = 16, Scene.nodeCount(testMenuScene()))
+
+/// ボビングで鳥の Y 座標が変化すること
+@Test
+def testMenuBirdBobbing(): Unit \ Assert =
+    let scene = testMenuScene();
+    let posBefore = Scene.globalPosition("bird", scene);
+    let sceneAfter = withMockRandom(() -> scene |> Scene.processAll(0.5, false));
+    let posAfter = Scene.globalPosition("bird", sceneAfter);
+    Assert.assertTrue(Float64.abs(posAfter#y - posBefore#y) > 0.1)
