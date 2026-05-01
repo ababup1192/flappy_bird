@@ -56,6 +56,12 @@ pub type alias Score = Int32
 /// ベストスコア値の型エイリアス
 pub type alias BestScore = Int32
 
+/// カメラシェイクの残り時間と強度
+pub type alias ShakeData = {shakeRemaining = Float64, shakeIntensity = Float64}
+
+/// ゲームオーバーアニメーションの経過時間
+pub type alias GameOverAnimData = {elapsed = Float64}
+
 /// 各ノードに付与する識別タグ（Scene[NodeTag] の型パラメータ）
 pub enum NodeTag {
     /// 鳥の RigidBody2D に付与。BirdData を保持する
@@ -74,6 +80,10 @@ pub enum NodeTag {
     case BestScoreLabel(BestScore)
     /// レベル管理ノード（リサイクルカウンタを保持）
     case LevelManager(LevelManagerData)
+    /// カメラシェイク状態を保持する
+    case CameraShake(ShakeData)
+    /// ゲームオーバーアニメーション状態を保持する
+    case GameOverAnim(GameOverAnimData)
     /// タグ不要なノード（スプライト子ノード等）
     case NoTag
 }
@@ -96,13 +106,31 @@ pub type alias GameState = {
 
 instance Node[NodeTag] {
     type Aef = { Math.Random }
-    // Bird: 回転角クランプ / Camera2D: 追従 / LevelManager: リサイクル
-    redef process(_delta: Float64, node: EngineNode[NodeTag],
+    // Bird: 回転角クランプ / Camera2D: 追従+シェイク / LevelManager: リサイクル
+    redef process(delta: Float64, node: EngineNode[NodeTag],
                   _path: NodePath, scene: Scene[NodeTag]): (EngineNode[NodeTag], Scene[NodeTag]) \ Math.Random =
         match node {
             case EngineNode.RigidBody2DWithState(body, NodeTag.Bird(birdData)) =>
                 let (newBody, newData) = BirdScene.birdProcess(body, birdData);
                 checked_ecast((EngineNode.RigidBody2DWithState(newBody, NodeTag.Bird(newData)), scene))
+            case EngineNode.Camera2DWithState(cam, NodeTag.CameraShake(shakeData)) =>
+                let birdPos = Scene.globalPosition("bird", scene);
+                let baseOffset = {x = Game.cameraOffsetX(), y = 0.0};
+                if (shakeData#shakeRemaining > 0.0) {
+                    let ox = (Math.Random.randomFloat64() - 0.5) * 2.0 * shakeData#shakeIntensity;
+                    let oy = (Math.Random.randomFloat64() - 0.5) * 2.0 * shakeData#shakeIntensity;
+                    let newCam = cam
+                        |> Node2D.setPosition({x = birdPos#x, y = 0.0})
+                        |> Camera2D.setOffset({x = baseOffset#x + ox, y = baseOffset#y + oy});
+                    let newShake: ShakeData = {shakeRemaining = shakeData#shakeRemaining - delta,
+                                    shakeIntensity = shakeData#shakeIntensity * 0.9};
+                    (EngineNode.Camera2DWithState(newCam, NodeTag.CameraShake(newShake)), scene)
+                } else {
+                    let newCam = cam
+                        |> Node2D.setPosition({x = birdPos#x, y = 0.0})
+                        |> Camera2D.setOffset(baseOffset);
+                    (EngineNode.Camera2DWithState(newCam, NodeTag.CameraShake(shakeData)), scene)
+                }
             case EngineNode.Camera2DWithState(cam, state) =>
                 let birdPos = Scene.globalPosition("bird", scene);
                 checked_ecast((EngineNode.Camera2DWithState(
@@ -135,13 +163,13 @@ instance AreaHandler[NodeTag] {
                           scene: Scene[NodeTag]): Scene[NodeTag] \ GameEngine.Audio =
         match (selfState, otherState) {
             case (NodeTag.BirdArea, NodeTag.Ground) =>
-                checked_ecast(Game.onBirdHitGround(scene))
+                Game.onBirdHitGround(scene)
             case (NodeTag.Ground, NodeTag.BirdArea) =>
-                checked_ecast(Game.onBirdHitGround(scene))
+                Game.onBirdHitGround(scene)
             case (NodeTag.BirdArea, NodeTag.Pipe) =>
-                checked_ecast(Game.onBirdHitPipe(pipePath = otherPath, scene))
+                Game.onBirdHitPipe(pipePath = otherPath, scene)
             case (NodeTag.Pipe, NodeTag.BirdArea) =>
-                checked_ecast(Game.onBirdHitPipe(pipePath = selfPath, scene))
+                Game.onBirdHitPipe(pipePath = selfPath, scene)
             case (NodeTag.BirdArea, NodeTag.Coin) =>
                 Game.onBirdPassedCoin(coinPath = otherPath, scene)
             case (NodeTag.Coin, NodeTag.BirdArea) =>
@@ -194,7 +222,7 @@ mod Game {
     def cameraName(): String = "camera"
 
     /// カメラオフセット X（参考実装 -36 の 2 倍）
-    def cameraOffsetX(): Float64 = -72.0
+    pub def cameraOffsetX(): Float64 = -72.0
 
     // ========================================================================
     // 背景定数
@@ -258,7 +286,8 @@ mod Game {
                 {x = cameraOffsetX(), y = 0.0})
             |> Camera2D.setAnchorMode(Camera2DAnchorMode.FixedTopLeft);
         scene |> Scene.addNode(cameraName(),
-            EngineNode.Camera2DWithState(camera, NodeTag.NoTag))
+            EngineNode.Camera2DWithState(camera,
+                NodeTag.CameraShake({shakeRemaining = 0.0, shakeIntensity = 0.0})))
 
     /// 背景を追加する（CanvasLayer layer=-1 + Sprite2D）
     def addBackground(scene: Scene[NodeTag]): Scene[NodeTag] =
@@ -271,19 +300,40 @@ mod Game {
                 EngineNode.Sprite2DWithState(sprite, NodeTag.NoTag))
 
     // ========================================================================
+    // カメラシェイク
+    // ========================================================================
+
+    /// カメラシェイクの強度（ピクセル）
+    def shakeIntensity(): Float64 = 4.0
+
+    /// カメラシェイクの持続時間（秒）
+    def shakeDuration(): Float64 = 0.3
+
+    /// カメラシェイクをトリガーする
+    def triggerCameraShake(intensity: Float64, duration: Float64, scene: Scene[NodeTag]): Scene[NodeTag] =
+        Scene.setState(cameraName() :: Nil,
+            NodeTag.CameraShake({shakeRemaining = duration, shakeIntensity = intensity}), scene)
+
+    // ========================================================================
     // 衝突応答
     // ========================================================================
 
     /// 鳥が地面に衝突したときの処理
     /// 鳥を Grounded 状態にし、地面の上にクランプする
-    pub def onBirdHitGround(scene: Scene[NodeTag]): Scene[NodeTag] =
+    pub def onBirdHitGround(scene: Scene[NodeTag]): Scene[NodeTag] \ GameEngine.Audio =
         let birdData = BirdScene.getBirdData(scene);
         match birdData#state {
             case BirdState.Flapping =>
+                // パイプに当たらず直接地面: sfx_hit + sfx_die の両方
+                GameEngine.Audio.playAudio("sfx_hit");
+                GameEngine.Audio.playAudio("sfx_die");
                 scene
                     |> BirdScene.setBirdState(BirdState.Grounded)
                     |> clampBirdAboveGround
+                    |> triggerCameraShake(shakeIntensity(), shakeDuration())
             case BirdState.Hit =>
+                // パイプ衝突後の着地: sfx_die のみ（sfx_hit は再生済み）
+                GameEngine.Audio.playAudio("sfx_die");
                 scene
                     |> BirdScene.setBirdState(BirdState.Grounded)
                     |> clampBirdAboveGround
@@ -292,14 +342,16 @@ mod Game {
 
     /// 鳥がパイプに衝突したときの処理
     /// Flapping → Hit に遷移し、鳥をパイプの左端まで押し戻す
-    pub def onBirdHitPipe(pipePath: {pipePath = NodePath}, scene: Scene[NodeTag]): Scene[NodeTag] =
+    pub def onBirdHitPipe(pipePath: {pipePath = NodePath}, scene: Scene[NodeTag]): Scene[NodeTag] \ GameEngine.Audio =
         let birdData = BirdScene.getBirdData(scene);
         match birdData#state {
             case BirdState.Flapping =>
+                GameEngine.Audio.playAudio("sfx_hit");
                 let pipeX = Scene.globalPositionAt(pipePath#pipePath, scene)#x;
                 scene
                     |> BirdScene.setBirdState(BirdState.Hit)
                     |> pushBirdOutOfPipe(pipeX)
+                    |> triggerCameraShake(shakeIntensity(), shakeDuration())
             case _ => scene
         }
 
@@ -385,11 +437,14 @@ mod Game {
         GameEngine.Game.isMouseButtonPressed(GameEngine.MouseButton.Left)
 
     /// 入力を読み取り、鳥の BirdData にフラグをセットする
-    def handleInput(scene: Scene[NodeTag]): Scene[NodeTag] \ GameEngine.Game =
+    def handleInput(scene: Scene[NodeTag]): Scene[NodeTag] \ {GameEngine.Game, GameEngine.Audio} =
         let birdData = BirdScene.getBirdData(scene);
         let inputPressed = isFlapInputPressed();
         let justPressed = inputPressed and not birdData#flapPressed;
-        let afterFlap = if (justPressed) BirdScene.requestFlap(scene) else scene;
+        let afterFlap = if (justPressed) {
+            GameEngine.Audio.playAudio("sfx_wing");
+            BirdScene.requestFlap(scene)
+        } else scene;
         BirdScene.setFlapPressed(inputPressed, afterFlap)
 
     // ========================================================================
@@ -413,6 +468,7 @@ mod Game {
                         |> engineUpdate(dt);
                     let birdData = BirdScene.getBirdData(updatedScene);
                     if (birdData#state == BirdState.Grounded) {
+                        GameEngine.Audio.playAudio("sfx_swooshing");
                         let (score, newBest, sceneWithBest) = ScoreScene.finalizeScore(updatedScene);
                         let sceneWithGameOver = GameOverScene.addGameOverUI(
                             score, newBest, fontAtlas, sceneWithBest);
@@ -422,15 +478,17 @@ mod Game {
                 case GamePhase.Menu =>
                     state
                 case GamePhase.GameOver =>
-                    let birdData = BirdScene.getBirdData(state#scene);
+                    let animScene = GameOverScene.updateAnimation(dt, state#scene);
+                    let animFinished = GameOverScene.isAnimationFinished(animScene);
+                    let birdData = BirdScene.getBirdData(animScene);
                     let inputPressed = isFlapInputPressed();
                     let justPressed = inputPressed and not birdData#flapPressed;
-                    if (justPressed and GameOverScene.isPlayButtonClicked(
+                    if (justPressed and animFinished and GameOverScene.isPlayButtonClicked(
                             GameEngine.Game.getMousePosition())) {
-                        let bestScore = ScoreScene.getBestScore(state#scene);
+                        let bestScore = ScoreScene.getBestScore(animScene);
                         buildState(fontAtlas, bestScore)
                     } else {
-                        let newScene = BirdScene.setFlapPressed(inputPressed, state#scene);
+                        let newScene = BirdScene.setFlapPressed(inputPressed, animScene);
                         {scene = newScene, phase = GamePhase.GameOver}
                     }
             };

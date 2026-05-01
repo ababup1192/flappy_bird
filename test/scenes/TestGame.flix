@@ -11,6 +11,13 @@ def withMockRandom(f: Unit -> a \ Math.Random): a =
         def randomInt64(k) = k(42i64)
     }
 
+/// GameEngine.Audio のモックハンドラ（playAudio/stopAudio は no-op）
+def withMockAudio(f: Unit -> a \ GameEngine.Audio): a =
+    run f() with handler GameEngine.Audio {
+        def playAudio(_, k) = k(())
+        def stopAudio(_, k) = k(())
+    }
+
 /// GameEngine.Game + Math.Random のモックハンドラ
 def withMockEngine(f: Unit -> a \ {GameEngine.Game, Math.Random}): a =
     run {
@@ -468,7 +475,7 @@ def testSetBirdStateHitSetsAngularVelocity(): Unit \ Assert =
 /// 鳥が地面に衝突すると Grounded になること
 @Test
 def testBirdGroundCollision(): Unit \ Assert =
-    let scene = Game.onBirdHitGround(testScene());
+    let scene = withMockAudio(() -> Game.onBirdHitGround(testScene()));
     Assert.assertEq(expected = BirdState.Grounded, BirdScene.getBirdData(scene)#state)
 
 /// 鳥が地面に衝突すると地面の上にクランプされること
@@ -478,10 +485,11 @@ def testBirdGroundCollision(): Unit \ Assert =
 ///
 @Test
 def testBirdClampedAboveGround(): Unit \ Assert =
-    let scene = testScene()
-        |> BirdScene.mapBirdBody((body, birdData) ->
-            (Node2D.setPosition({x = 144.0, y = 470.0}, body), birdData))
-        |> Game.onBirdHitGround;
+    let scene = withMockAudio(() ->
+        testScene()
+            |> BirdScene.mapBirdBody((body, birdData) ->
+                (Node2D.setPosition({x = 144.0, y = 470.0}, body), birdData))
+            |> Game.onBirdHitGround);
     let pos = Scene.globalPosition("bird", scene);
     Assert.assertEq(expected = 387.0, pos#y)
 
@@ -691,7 +699,7 @@ def testSpawnPipePairAt(): Unit \ Assert =
 @Test
 def testBirdPipeCollisionFlappingToHit(): Unit \ Assert =
     let pipePath = "pipe_0_top" :: Nil;
-    let scene = Game.onBirdHitPipe(pipePath = pipePath, testScene());
+    let scene = withMockAudio(() -> Game.onBirdHitPipe(pipePath = pipePath, testScene()));
     Assert.assertEq(expected = BirdState.Hit, BirdScene.getBirdData(scene)#state)
 
 /// パイプ衝突時に鳥がパイプの左端に押し戻されること
@@ -702,7 +710,7 @@ def testBirdPipeCollisionFlappingToHit(): Unit \ Assert =
 @Test
 def testBirdPipeCollisionPushBack(): Unit \ Assert =
     let pipePath = "pipe_0_top" :: Nil;
-    let scene = Game.onBirdHitPipe(pipePath = pipePath, testScene());
+    let scene = withMockAudio(() -> Game.onBirdHitPipe(pipePath = pipePath, testScene()));
     let birdX = Scene.globalPosition("bird", scene)#x;
     Assert.assertEq(expected = 537.0, birdX)
 
@@ -710,18 +718,20 @@ def testBirdPipeCollisionPushBack(): Unit \ Assert =
 @Test
 def testBirdPipeCollisionHitNoChange(): Unit \ Assert =
     let pipePath = "pipe_0_top" :: Nil;
-    let scene = testScene()
-        |> BirdScene.setBirdState(BirdState.Hit)
-        |> Game.onBirdHitPipe(pipePath = pipePath);
+    let scene = withMockAudio(() ->
+        testScene()
+            |> BirdScene.setBirdState(BirdState.Hit)
+            |> Game.onBirdHitPipe(pipePath = pipePath));
     Assert.assertEq(expected = BirdState.Hit, BirdScene.getBirdData(scene)#state)
 
 /// Grounded 状態でパイプ衝突しても変化しないこと
 @Test
 def testBirdPipeCollisionGroundedNoChange(): Unit \ Assert =
     let pipePath = "pipe_0_top" :: Nil;
-    let scene = testScene()
-        |> BirdScene.setBirdState(BirdState.Grounded)
-        |> Game.onBirdHitPipe(pipePath = pipePath);
+    let scene = withMockAudio(() ->
+        testScene()
+            |> BirdScene.setBirdState(BirdState.Grounded)
+            |> Game.onBirdHitPipe(pipePath = pipePath));
     Assert.assertEq(expected = BirdState.Grounded, BirdScene.getBirdData(scene)#state)
 
 // ========================================================================
