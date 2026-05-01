@@ -57,13 +57,13 @@ mod GameOverScene {
     def scorePanelPos(): Vec2.Vec2 = {x = 144.0, y = 280.0}
 
     /// メダルの位置（パネル左側、パネル中心より少し下）
-    def medalPos(): Vec2.Vec2 = {x = 76.0, y = 286.0}
+    def medalPos(): Vec2.Vec2 = {x = 81.0, y = 287.0}
 
     /// 最終スコアの位置（パネル右上、"SCORE" テキストと同じ行）
     def finalScorePos(): Vec2.Vec2 = {x = 220.0, y = 253.0}
 
     /// ベストスコアの位置（パネル右下、"BEST" テキストと同じ行）
-    def bestScorePos(): Vec2.Vec2 = {x = 220.0, y = 295.0}
+    def bestScorePos(): Vec2.Vec2 = {x = 218.0, y = 295.0}
 
     /// Play ボタンの位置
     def playButtonPos(): Vec2.Vec2 = {x = 144.0, y = 390.0}
