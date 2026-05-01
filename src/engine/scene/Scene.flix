@@ -438,6 +438,22 @@ pub mod Scene {
             scene)
 
     // ========================================================================
+    // カメラ
+    // ========================================================================
+
+    /// シーン内の有効な Camera2D を探して返す
+    pub def findActiveCamera(scene: Scene[s]): Option[Camera2D] =
+        preorderPaths(scene)
+            |> List.findMap(path ->
+                match getEngineNode(path, scene) {
+                    case Some(EngineNode.Camera2DWithState(cam, _)) =>
+                        if (Camera2D.isEnabled(cam)) Some(cam)
+                        else None
+                    case _ => None
+                }
+            )
+
+    // ========================================================================
     // DrawContext — 親子プロパティ伝播（Godot CanvasItem 準拠）
     // ========================================================================
 
@@ -454,16 +470,16 @@ pub mod Scene {
     ///   - modulate: 全祖先の色を乗算
     ///   - zOffset: 祖先の zIndex 累積加算（CanvasLayer でリセット）
     ///   - layerOffset: CanvasLayer の layer * layerStride
-    def drawContext(path: NodePath, scene: Scene[s]): {layerOffset = Int32, visible = Bool, modulate = Color, zOffset = Int32} =
-        drawContextWalk(Nil, path, scene, {layerOffset = 0, visible = true, modulate = {r = 1.0f32, g = 1.0f32, b = 1.0f32}, zOffset = 0})
+    def drawContext(path: NodePath, scene: Scene[s]): {layerOffset = Int32, visible = Bool, modulate = Color, zOffset = Int32, underCanvasLayer = Bool} =
+        drawContextWalk(Nil, path, scene, {layerOffset = 0, visible = true, modulate = {r = 1.0f32, g = 1.0f32, b = 1.0f32}, zOffset = 0, underCanvasLayer = false})
 
     /// drawContext の内部実装（パスを上から下へ辿る末尾再帰）
     def drawContextWalk(
         prefix: NodePath,
         remaining: NodePath,
         scene: Scene[s],
-        ctx: {layerOffset = Int32, visible = Bool, modulate = Color, zOffset = Int32}
-    ): {layerOffset = Int32, visible = Bool, modulate = Color, zOffset = Int32} =
+        ctx: {layerOffset = Int32, visible = Bool, modulate = Color, zOffset = Int32, underCanvasLayer = Bool}
+    ): {layerOffset = Int32, visible = Bool, modulate = Color, zOffset = Int32, underCanvasLayer = Bool} =
         match remaining {
             case Nil => ctx
             // 最後の要素はノード自身なのでスキップ（祖先のみ検査）
@@ -478,9 +494,9 @@ pub mod Scene {
                             case EngineNode.CanvasLayerWithState(cl, _) =>
                                 let CanvasLayer.CanvasLayer(r) = cl;
                                 // CanvasLayer は layerOffset を設定し、zOffset チェーンをリセット
-                                {layerOffset = r#drawLayer * CanvasLayer.layerStride(), visible = vis, modulate = mc, zOffset = 0}
+                                {layerOffset = r#drawLayer * CanvasLayer.layerStride(), visible = vis, modulate = mc, zOffset = 0, underCanvasLayer = true}
                             case _ =>
-                                {layerOffset = ctx#layerOffset, visible = vis, modulate = mc, zOffset = ctx#zOffset + CanvasItem.getZIndex(engineNode)}
+                                {layerOffset = ctx#layerOffset, visible = vis, modulate = mc, zOffset = ctx#zOffset + CanvasItem.getZIndex(engineNode), underCanvasLayer = ctx#underCanvasLayer}
                         }
                     case None => ctx
                 };
@@ -516,7 +532,8 @@ pub mod Scene {
     /// 可視ノードを Drawable のリストに変換する
     /// 各ノードが複数 Drawable を返せるよう flatMap ベースで処理する
     /// 祖先の visible/modulate/zIndex が自動的に子ノードに伝播する（Godot 準拠）
-    pub def toDrawables(scene: Scene[s]): List[GameEngine.Drawable] =
+    /// cameraOffset: カメラのビューポートオフセット。CanvasLayer 配下のノードには適用しない
+    pub def toDrawables(cameraOffset: Vec2.Vec2, scene: Scene[s]): List[GameEngine.Drawable] =
         preorderPaths(scene)
             |> List.flatMap(path ->
                 let ctx = drawContext(path, scene);
@@ -526,7 +543,10 @@ pub mod Scene {
                     match getEngineNode(path, scene) {
                         case Some(engineNode) =>
                             if (CanvasItem.isVisible(engineNode)) {
-                                let drawables = GameEngine.Renderable.toDrawables(engineNode, globalPositionAt(path, scene));
+                                let worldPos = globalPositionAt(path, scene);
+                                let screenPos = if (ctx#underCanvasLayer) worldPos
+                                                else Vec2.sub(worldPos, cameraOffset);
+                                let drawables = GameEngine.Renderable.toDrawables(engineNode, screenPos);
                                 let zOff = ctx#zOffset + ctx#layerOffset;
                                 List.map(applyDrawContext(zOff, ctx#modulate), drawables)
                             } else Nil

@@ -142,8 +142,16 @@ mod GameEngine {
         ButtonEvent.handleButtons(scene)
 
     /// シーンを描画する
+    /// アクティブな Camera2D があれば、ビューポートオフセットを計算して描画に適用する
+    /// CanvasLayer 配下のノード（HUD 等）にはカメラオフセットを適用しない
     pub def render(scene: Scene[s]): Unit \ Game =
-        Scene.toDrawables(scene) |> Game.render
+        let cameraOffset = match Scene.findActiveCamera(scene) {
+            case Some(cam) =>
+                let vp = Game.getViewportRect();
+                Camera2D.getViewportOffset(cam, {viewportWidth = vp#size#x, viewportHeight = vp#size#y})
+            case None => Vec2.zero()
+        };
+        Scene.toDrawables(cameraOffset, scene) |> Game.render
 
     // ========================================================================
     // プラットフォーム

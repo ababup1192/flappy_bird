@@ -36,6 +36,8 @@ pub enum EngineNode[state] {
     case ButtonWithState(Button, state)
     /// 2D カメラノード（ビューポート追従）
     case Camera2DWithState(Camera2D, state)
+    /// 静的物理ボディ（壁・床・パイプ等の固定障害物）
+    case StaticBody2DWithState(StaticBody2D, state)
 }
 
 mod EngineNode {
@@ -58,6 +60,7 @@ mod EngineNode {
         case EngineNode.ControlWithState(_, state) => state
         case EngineNode.ButtonWithState(_, state) => state
         case EngineNode.Camera2DWithState(_, state) => state
+        case EngineNode.StaticBody2DWithState(_, state) => state
     }
 
     /// EngineNode の state を置き換える
@@ -78,6 +81,7 @@ mod EngineNode {
         case EngineNode.ControlWithState(inner, _) => EngineNode.ControlWithState(inner, newState)
         case EngineNode.ButtonWithState(inner, _) => EngineNode.ButtonWithState(inner, newState)
         case EngineNode.Camera2DWithState(inner, _) => EngineNode.Camera2DWithState(inner, newState)
+        case EngineNode.StaticBody2DWithState(inner, _) => EngineNode.StaticBody2DWithState(inner, newState)
     }
 
     /// EngineNode の state に関数を適用する
@@ -98,6 +102,7 @@ mod EngineNode {
         case EngineNode.ControlWithState(inner, state) => EngineNode.ControlWithState(inner, f(state))
         case EngineNode.ButtonWithState(inner, state) => EngineNode.ButtonWithState(inner, f(state))
         case EngineNode.Camera2DWithState(inner, state) => EngineNode.Camera2DWithState(inner, f(state))
+        case EngineNode.StaticBody2DWithState(inner, state) => EngineNode.StaticBody2DWithState(inner, f(state))
     }
 
     /// Timer の inner node に関数を適用する
@@ -169,6 +174,12 @@ mod EngineNode {
     /// Camera2D の inner node に関数を適用する
     pub def mapCamera2D(f: Camera2D -> Camera2D, node: EngineNode[s]): EngineNode[s] = match node {
         case EngineNode.Camera2DWithState(inner, st) => EngineNode.Camera2DWithState(f(inner), st)
+        case _ => node
+    }
+
+    /// StaticBody2D の inner node に関数を適用する
+    pub def mapStaticBody2D(f: StaticBody2D -> StaticBody2D, node: EngineNode[s]): EngineNode[s] = match node {
+        case EngineNode.StaticBody2DWithState(inner, st) => EngineNode.StaticBody2DWithState(f(inner), st)
         case _ => node
     }
 
@@ -259,6 +270,7 @@ instance CanvasItem[EngineNode[s]] {
         case EngineNode.ControlWithState(ctrl, _) => CanvasItem.isVisible(ctrl)
         case EngineNode.ButtonWithState(btn, _) => CanvasItem.isVisible(btn)
         case EngineNode.Camera2DWithState(cam, _) => CanvasItem.isVisible(cam)
+        case EngineNode.StaticBody2DWithState(body, _) => CanvasItem.isVisible(body)
     }
     pub def setVisible(visible: Bool, node: EngineNode[s]): EngineNode[s] = match node {
         case EngineNode.Sprite2DWithState(sprite, st) => EngineNode.Sprite2DWithState(CanvasItem.setVisible(visible, sprite), st)
@@ -277,6 +289,7 @@ instance CanvasItem[EngineNode[s]] {
         case EngineNode.ControlWithState(ctrl, st) => EngineNode.ControlWithState(CanvasItem.setVisible(visible, ctrl), st)
         case EngineNode.ButtonWithState(btn, st) => EngineNode.ButtonWithState(CanvasItem.setVisible(visible, btn), st)
         case EngineNode.Camera2DWithState(cam, st) => EngineNode.Camera2DWithState(CanvasItem.setVisible(visible, cam), st)
+        case EngineNode.StaticBody2DWithState(body, st) => EngineNode.StaticBody2DWithState(CanvasItem.setVisible(visible, body), st)
     }
     pub def getModulate(node: EngineNode[s]): Color = match node {
         case EngineNode.Sprite2DWithState(sprite, _) => CanvasItem.getModulate(sprite)
@@ -295,6 +308,7 @@ instance CanvasItem[EngineNode[s]] {
         case EngineNode.ControlWithState(ctrl, _) => CanvasItem.getModulate(ctrl)
         case EngineNode.ButtonWithState(btn, _) => CanvasItem.getModulate(btn)
         case EngineNode.Camera2DWithState(cam, _) => CanvasItem.getModulate(cam)
+        case EngineNode.StaticBody2DWithState(body, _) => CanvasItem.getModulate(body)
     }
     pub def setModulate(color: Color, node: EngineNode[s]): EngineNode[s] = match node {
         case EngineNode.Sprite2DWithState(sprite, st) => EngineNode.Sprite2DWithState(CanvasItem.setModulate(color, sprite), st)
@@ -313,6 +327,7 @@ instance CanvasItem[EngineNode[s]] {
         case EngineNode.ControlWithState(ctrl, st) => EngineNode.ControlWithState(CanvasItem.setModulate(color, ctrl), st)
         case EngineNode.ButtonWithState(btn, st) => EngineNode.ButtonWithState(CanvasItem.setModulate(color, btn), st)
         case EngineNode.Camera2DWithState(cam, st) => EngineNode.Camera2DWithState(CanvasItem.setModulate(color, cam), st)
+        case EngineNode.StaticBody2DWithState(body, st) => EngineNode.StaticBody2DWithState(CanvasItem.setModulate(color, body), st)
     }
     pub def getZIndex(node: EngineNode[s]): Int32 = match node {
         case EngineNode.Sprite2DWithState(sprite, _) => CanvasItem.getZIndex(sprite)
@@ -331,6 +346,7 @@ instance CanvasItem[EngineNode[s]] {
         case EngineNode.ControlWithState(ctrl, _) => CanvasItem.getZIndex(ctrl)
         case EngineNode.ButtonWithState(btn, _) => CanvasItem.getZIndex(btn)
         case EngineNode.Camera2DWithState(cam, _) => CanvasItem.getZIndex(cam)
+        case EngineNode.StaticBody2DWithState(body, _) => CanvasItem.getZIndex(body)
     }
     pub def setZIndex(zIndex: Int32, node: EngineNode[s]): EngineNode[s] = match node {
         case EngineNode.Sprite2DWithState(sprite, st) => EngineNode.Sprite2DWithState(CanvasItem.setZIndex(zIndex, sprite), st)
@@ -349,6 +365,7 @@ instance CanvasItem[EngineNode[s]] {
         case EngineNode.ControlWithState(ctrl, st) => EngineNode.ControlWithState(CanvasItem.setZIndex(zIndex, ctrl), st)
         case EngineNode.ButtonWithState(btn, st) => EngineNode.ButtonWithState(CanvasItem.setZIndex(zIndex, btn), st)
         case EngineNode.Camera2DWithState(cam, st) => EngineNode.Camera2DWithState(CanvasItem.setZIndex(zIndex, cam), st)
+        case EngineNode.StaticBody2DWithState(body, st) => EngineNode.StaticBody2DWithState(CanvasItem.setZIndex(zIndex, body), st)
     }
 }
 
@@ -372,6 +389,7 @@ instance Node2D[EngineNode[s]] {
         case EngineNode.ControlWithState(ctrl, _) => Node2D.getPosition(ctrl)
         case EngineNode.ButtonWithState(btn, _) => Node2D.getPosition(btn)
         case EngineNode.Camera2DWithState(cam, _) => Node2D.getPosition(cam)
+        case EngineNode.StaticBody2DWithState(body, _) => Node2D.getPosition(body)
     }
     pub def setPosition(position: Vec2.Vec2, node: EngineNode[s]): EngineNode[s] = match node {
         case EngineNode.Sprite2DWithState(sprite, st) => EngineNode.Sprite2DWithState(Node2D.setPosition(position, sprite), st)
@@ -390,6 +408,7 @@ instance Node2D[EngineNode[s]] {
         case EngineNode.ControlWithState(ctrl, st) => EngineNode.ControlWithState(Node2D.setPosition(position, ctrl), st)
         case EngineNode.ButtonWithState(btn, st) => EngineNode.ButtonWithState(Node2D.setPosition(position, btn), st)
         case EngineNode.Camera2DWithState(cam, st) => EngineNode.Camera2DWithState(Node2D.setPosition(position, cam), st)
+        case EngineNode.StaticBody2DWithState(body, st) => EngineNode.StaticBody2DWithState(Node2D.setPosition(position, body), st)
     }
     pub def getRotation(node: EngineNode[s]): Float64 = match node {
         case EngineNode.Sprite2DWithState(sprite, _) => Node2D.getRotation(sprite)
@@ -408,6 +427,7 @@ instance Node2D[EngineNode[s]] {
         case EngineNode.ControlWithState(ctrl, _) => Node2D.getRotation(ctrl)
         case EngineNode.ButtonWithState(btn, _) => Node2D.getRotation(btn)
         case EngineNode.Camera2DWithState(cam, _) => Node2D.getRotation(cam)
+        case EngineNode.StaticBody2DWithState(body, _) => Node2D.getRotation(body)
     }
     pub def setRotation(rotation: Float64, node: EngineNode[s]): EngineNode[s] = match node {
         case EngineNode.Sprite2DWithState(sprite, st) => EngineNode.Sprite2DWithState(Node2D.setRotation(rotation, sprite), st)
@@ -426,6 +446,7 @@ instance Node2D[EngineNode[s]] {
         case EngineNode.ControlWithState(ctrl, st) => EngineNode.ControlWithState(Node2D.setRotation(rotation, ctrl), st)
         case EngineNode.ButtonWithState(btn, st) => EngineNode.ButtonWithState(Node2D.setRotation(rotation, btn), st)
         case EngineNode.Camera2DWithState(cam, st) => EngineNode.Camera2DWithState(Node2D.setRotation(rotation, cam), st)
+        case EngineNode.StaticBody2DWithState(body, st) => EngineNode.StaticBody2DWithState(Node2D.setRotation(rotation, body), st)
     }
     pub def getScale(node: EngineNode[s]): Vec2.Vec2 = match node {
         case EngineNode.Sprite2DWithState(sprite, _) => Node2D.getScale(sprite)
@@ -444,6 +465,7 @@ instance Node2D[EngineNode[s]] {
         case EngineNode.ControlWithState(ctrl, _) => Node2D.getScale(ctrl)
         case EngineNode.ButtonWithState(btn, _) => Node2D.getScale(btn)
         case EngineNode.Camera2DWithState(cam, _) => Node2D.getScale(cam)
+        case EngineNode.StaticBody2DWithState(body, _) => Node2D.getScale(body)
     }
     pub def setScale(scale: Vec2.Vec2, node: EngineNode[s]): EngineNode[s] = match node {
         case EngineNode.Sprite2DWithState(sprite, st) => EngineNode.Sprite2DWithState(Node2D.setScale(scale, sprite), st)
@@ -462,6 +484,7 @@ instance Node2D[EngineNode[s]] {
         case EngineNode.ControlWithState(ctrl, st) => EngineNode.ControlWithState(Node2D.setScale(scale, ctrl), st)
         case EngineNode.ButtonWithState(btn, st) => EngineNode.ButtonWithState(Node2D.setScale(scale, btn), st)
         case EngineNode.Camera2DWithState(cam, st) => EngineNode.Camera2DWithState(Node2D.setScale(scale, cam), st)
+        case EngineNode.StaticBody2DWithState(body, st) => EngineNode.StaticBody2DWithState(Node2D.setScale(scale, body), st)
     }
     pub def getSkew(node: EngineNode[s]): Float64 = match node {
         case EngineNode.Sprite2DWithState(sprite, _) => Node2D.getSkew(sprite)
@@ -480,6 +503,7 @@ instance Node2D[EngineNode[s]] {
         case EngineNode.ControlWithState(ctrl, _) => Node2D.getSkew(ctrl)
         case EngineNode.ButtonWithState(btn, _) => Node2D.getSkew(btn)
         case EngineNode.Camera2DWithState(cam, _) => Node2D.getSkew(cam)
+        case EngineNode.StaticBody2DWithState(body, _) => Node2D.getSkew(body)
     }
     pub def setSkew(skew: Float64, node: EngineNode[s]): EngineNode[s] = match node {
         case EngineNode.Sprite2DWithState(sprite, st) => EngineNode.Sprite2DWithState(Node2D.setSkew(skew, sprite), st)
@@ -498,6 +522,7 @@ instance Node2D[EngineNode[s]] {
         case EngineNode.ControlWithState(ctrl, st) => EngineNode.ControlWithState(Node2D.setSkew(skew, ctrl), st)
         case EngineNode.ButtonWithState(btn, st) => EngineNode.ButtonWithState(Node2D.setSkew(skew, btn), st)
         case EngineNode.Camera2DWithState(cam, st) => EngineNode.Camera2DWithState(Node2D.setSkew(skew, cam), st)
+        case EngineNode.StaticBody2DWithState(body, st) => EngineNode.StaticBody2DWithState(Node2D.setSkew(skew, body), st)
     }
 }
 
@@ -508,24 +533,28 @@ instance CollisionObject2D[EngineNode[s]] {
         case EngineNode.Area2DWithState(area, _) => CollisionObject2D.getCollisionShape(area)
         case EngineNode.Body2DWithState(body, _) => CollisionObject2D.getCollisionShape(body)
         case EngineNode.RigidBody2DWithState(body, _) => CollisionObject2D.getCollisionShape(body)
+        case EngineNode.StaticBody2DWithState(body, _) => CollisionObject2D.getCollisionShape(body)
         case _ => None
     }
     pub def isMonitoring(node: EngineNode[s]): Bool = match node {
         case EngineNode.Area2DWithState(area, _) => CollisionObject2D.isMonitoring(area)
         case EngineNode.Body2DWithState(body, _) => CollisionObject2D.isMonitoring(body)
         case EngineNode.RigidBody2DWithState(body, _) => CollisionObject2D.isMonitoring(body)
+        case EngineNode.StaticBody2DWithState(body, _) => CollisionObject2D.isMonitoring(body)
         case _ => false
     }
     pub def isMonitorable(node: EngineNode[s]): Bool = match node {
         case EngineNode.Area2DWithState(area, _) => CollisionObject2D.isMonitorable(area)
         case EngineNode.Body2DWithState(body, _) => CollisionObject2D.isMonitorable(body)
         case EngineNode.RigidBody2DWithState(body, _) => CollisionObject2D.isMonitorable(body)
+        case EngineNode.StaticBody2DWithState(body, _) => CollisionObject2D.isMonitorable(body)
         case _ => false
     }
     redef getCollisionPriority(node: EngineNode[s]): Int32 = match node {
         case EngineNode.Area2DWithState(area, _) => CollisionObject2D.getCollisionPriority(area)
         case EngineNode.Body2DWithState(body, _) => CollisionObject2D.getCollisionPriority(body)
         case EngineNode.RigidBody2DWithState(body, _) => CollisionObject2D.getCollisionPriority(body)
+        case EngineNode.StaticBody2DWithState(body, _) => CollisionObject2D.getCollisionPriority(body)
         case _ => 0
     }
 }
@@ -553,6 +582,7 @@ instance GameEngine.Renderable[EngineNode[s]] {
             case EngineNode.ButtonWithState(btn, _) =>
                 Button.toDrawables(btn, globalPos)
             case EngineNode.Camera2DWithState(_, _) => Nil
+            case EngineNode.StaticBody2DWithState(_, _) => Nil
             case _ =>
                 EngineNode.fallbackDrawable(node, globalPos) :: Nil
         }

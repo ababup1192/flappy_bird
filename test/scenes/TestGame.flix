@@ -757,13 +757,13 @@ def testParentHideHidesChildDrawables(): Unit \ Assert =
     let scene = testReadyScene()
         |> PlayerScene.start({x = 240.0, y = 450.0});
     // player visible → trail も Drawable に含まれる
-    let visibleDrawables = Scene.toDrawables(scene);
+    let visibleDrawables = Scene.toDrawables(Vec2.zero(), scene);
     let hasTrailBefore = List.exists(d -> d#zIndex == 9, visibleDrawables);
     Assert.assertTrue(hasTrailBefore);
     // player hide → trail も Drawable から消える（visible 伝播）
     let hiddenScene = scene |> PlayerScene.mapPlayerSprite((sprite, playerData) ->
         (CanvasItem.hide(sprite), playerData));
-    let hiddenDrawables = Scene.toDrawables(hiddenScene);
+    let hiddenDrawables = Scene.toDrawables(Vec2.zero(), hiddenScene);
     let hasTrailAfter = List.exists(d -> d#zIndex == 9, hiddenDrawables);
     Assert.assertFalse(hasTrailAfter)
 
@@ -775,7 +775,7 @@ def testParentModulatePropagates(): Unit \ Assert =
         // player の modulate を赤(1,0,0)に設定
         |> PlayerScene.mapPlayerSprite((sprite, playerData) ->
             (CanvasItem.setModulate({r = 1.0f32, g = 0.0f32, b = 0.0f32}, sprite), playerData));
-    let drawables = Scene.toDrawables(scene);
+    let drawables = Scene.toDrawables(Vec2.zero(), scene);
     // trail の Drawable を取得（zIndex == -1 は trail のパーティクル）
     let trailDrawables = List.filter(d -> d#zIndex == -1, drawables);
     // trail の各パーティクルの color.g が 0 であること（親の赤 modulate が乗算）
@@ -794,7 +794,7 @@ def testZIndexRelativePropagation(): Unit \ Assert =
     let scene: Scene[String] = Scene.empty()
         |> Scene.addNode("parent", EngineNode.Sprite2DWithState(parent, "p"))
         |> Scene.addChild("parent", "child", EngineNode.Sprite2DWithState(child, "c"));
-    let drawables = Scene.toDrawables(scene);
+    let drawables = Scene.toDrawables(Vec2.zero(), scene);
     // child の effective zIndex = 5 (own) + 10 (parent) = 15
     Assert.assertTrue(List.exists(d -> d#zIndex == 15, drawables))
 
@@ -813,6 +813,6 @@ def testCanvasLayerResetsZOffset(): Unit \ Assert =
         |> Scene.addNode("root", EngineNode.Sprite2DWithState(root, "r"))
         |> Scene.addChild("root", "cl", EngineNode.CanvasLayerWithState(cl, "l"))
         |> Scene.addChildAt("root" :: "cl" :: Nil, "child", EngineNode.Sprite2DWithState(child, "c"));
-    let drawables = Scene.toDrawables(scene);
+    let drawables = Scene.toDrawables(Vec2.zero(), scene);
     // child の effective zIndex = 5 (own) + 0 (zOffset reset by CanvasLayer) + 10000 (layerOffset) = 10005
     Assert.assertTrue(List.exists(d -> d#zIndex == 10005, drawables))
