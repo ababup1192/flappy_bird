@@ -28,47 +28,34 @@ pub enum Camera2DProcessCallback with Eq, Order, ToString {
 
 pub enum Camera2D {
     case Camera2D({
-        // ── Node2D ──
-        position = Vec2.Vec2,           // カメラ位置（ターゲット座標）
-        rotation = Float64,             // 回転（ラジアン）
-        scale = Vec2.Vec2,             // スケール
-        skew = Float64,                 // スキュー（ラジアン）
-
-        // ── CanvasItem ──
-        visible = Bool,                 // 表示フラグ
-        zIndex = Int32,                 // 描画順
-        modulate = Color,               // 色変調
-
-        // ── Camera2D 固有 ──
-        offset = Vec2.Vec2,            // ビューポートオフセット（ピクセル）
-        zoom = Vec2.Vec2,              // ズーム倍率（デフォルト 1,1 — 大きいほど拡大）
-        enabled = Bool,                 // カメラ有効フラグ（Godot の current プロパティ）
-        anchorMode = Camera2DAnchorMode,       // アンカーモード
-        processCallback = Camera2DProcessCallback, // 更新タイミング
-        ignoreRotation = Bool,          // true なら回転をビューポートに反映しない
-
-        // ── スクロール制限 ──
-        limitLeft = Int32,              // スクロール制限（左端）
-        limitTop = Int32,               // スクロール制限（上端）
-        limitRight = Int32,             // スクロール制限（右端）
-        limitBottom = Int32,            // スクロール制限（下端）
-        limitSmoothed = Bool,           // 制限到達時のスムージング
-
-        // ── 位置スムージング ──
-        positionSmoothingEnabled = Bool,  // 位置スムージングの有効化
-        positionSmoothingSpeed = Float64, // 位置スムージングの速度（大きいほど速く追従）
-
-        // ── 回転スムージング ──
-        rotationSmoothingEnabled = Bool,  // 回転スムージングの有効化
-        rotationSmoothingSpeed = Float64, // 回転スムージングの速度
-
-        // ── ドラッグマージン ──
-        dragHorizontalEnabled = Bool,   // 水平方向のドラッグマージン有効化
-        dragVerticalEnabled = Bool,     // 垂直方向のドラッグマージン有効化
-        dragLeftMargin = Float64,       // 左ドラッグマージン（0.0〜1.0）
-        dragRightMargin = Float64,      // 右ドラッグマージン（0.0〜1.0）
-        dragTopMargin = Float64,        // 上ドラッグマージン（0.0〜1.0）
-        dragBottomMargin = Float64      // 下ドラッグマージン（0.0〜1.0）
+        position = Vec2.Vec2,
+        rotation = Float64,
+        scale = Vec2.Vec2,
+        skew = Float64,
+        visible = Bool,
+        zIndex = Int32,
+        modulate = Color,
+        offset = Vec2.Vec2,
+        zoom = Vec2.Vec2,
+        enabled = Bool,
+        anchorMode = Camera2DAnchorMode,
+        processCallback = Camera2DProcessCallback,
+        ignoreRotation = Bool,
+        limitLeft = Int32,
+        limitTop = Int32,
+        limitRight = Int32,
+        limitBottom = Int32,
+        limitSmoothed = Bool,
+        positionSmoothingEnabled = Bool,
+        positionSmoothingSpeed = Float64,
+        rotationSmoothingEnabled = Bool,
+        rotationSmoothingSpeed = Float64,
+        dragHorizontalEnabled = Bool,
+        dragVerticalEnabled = Bool,
+        dragLeftMargin = Float64,
+        dragRightMargin = Float64,
+        dragTopMargin = Float64,
+        dragBottomMargin = Float64
     })
 }
 

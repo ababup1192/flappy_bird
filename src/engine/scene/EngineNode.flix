@@ -77,6 +77,7 @@ mod EngineNode {
         case EngineNode.CanvasLayerWithState(inner, _) => EngineNode.CanvasLayerWithState(inner, newState)
         case EngineNode.ControlWithState(inner, _) => EngineNode.ControlWithState(inner, newState)
         case EngineNode.ButtonWithState(inner, _) => EngineNode.ButtonWithState(inner, newState)
+        case EngineNode.Camera2DWithState(inner, _) => EngineNode.Camera2DWithState(inner, newState)
     }
 
     /// EngineNode の state に関数を適用する
@@ -96,6 +97,7 @@ mod EngineNode {
         case EngineNode.CanvasLayerWithState(inner, state) => EngineNode.CanvasLayerWithState(inner, f(state))
         case EngineNode.ControlWithState(inner, state) => EngineNode.ControlWithState(inner, f(state))
         case EngineNode.ButtonWithState(inner, state) => EngineNode.ButtonWithState(inner, f(state))
+        case EngineNode.Camera2DWithState(inner, state) => EngineNode.Camera2DWithState(inner, f(state))
     }
 
     /// Timer の inner node に関数を適用する
@@ -161,6 +163,12 @@ mod EngineNode {
     /// Button の inner node に関数を適用する
     pub def mapButton(f: Button -> Button, node: EngineNode[s]): EngineNode[s] = match node {
         case EngineNode.ButtonWithState(inner, st) => EngineNode.ButtonWithState(f(inner), st)
+        case _ => node
+    }
+
+    /// Camera2D の inner node に関数を適用する
+    pub def mapCamera2D(f: Camera2D -> Camera2D, node: EngineNode[s]): EngineNode[s] = match node {
+        case EngineNode.Camera2DWithState(inner, st) => EngineNode.Camera2DWithState(f(inner), st)
         case _ => node
     }
 
@@ -250,6 +258,7 @@ instance CanvasItem[EngineNode[s]] {
         case EngineNode.CanvasLayerWithState(cl, _) => CanvasItem.isVisible(cl)
         case EngineNode.ControlWithState(ctrl, _) => CanvasItem.isVisible(ctrl)
         case EngineNode.ButtonWithState(btn, _) => CanvasItem.isVisible(btn)
+        case EngineNode.Camera2DWithState(cam, _) => CanvasItem.isVisible(cam)
     }
     pub def setVisible(visible: Bool, node: EngineNode[s]): EngineNode[s] = match node {
         case EngineNode.Sprite2DWithState(sprite, st) => EngineNode.Sprite2DWithState(CanvasItem.setVisible(visible, sprite), st)
@@ -267,6 +276,7 @@ instance CanvasItem[EngineNode[s]] {
         case EngineNode.CanvasLayerWithState(cl, st) => EngineNode.CanvasLayerWithState(CanvasItem.setVisible(visible, cl), st)
         case EngineNode.ControlWithState(ctrl, st) => EngineNode.ControlWithState(CanvasItem.setVisible(visible, ctrl), st)
         case EngineNode.ButtonWithState(btn, st) => EngineNode.ButtonWithState(CanvasItem.setVisible(visible, btn), st)
+        case EngineNode.Camera2DWithState(cam, st) => EngineNode.Camera2DWithState(CanvasItem.setVisible(visible, cam), st)
     }
     pub def getModulate(node: EngineNode[s]): Color = match node {
         case EngineNode.Sprite2DWithState(sprite, _) => CanvasItem.getModulate(sprite)
@@ -284,6 +294,7 @@ instance CanvasItem[EngineNode[s]] {
         case EngineNode.CanvasLayerWithState(cl, _) => CanvasItem.getModulate(cl)
         case EngineNode.ControlWithState(ctrl, _) => CanvasItem.getModulate(ctrl)
         case EngineNode.ButtonWithState(btn, _) => CanvasItem.getModulate(btn)
+        case EngineNode.Camera2DWithState(cam, _) => CanvasItem.getModulate(cam)
     }
     pub def setModulate(color: Color, node: EngineNode[s]): EngineNode[s] = match node {
         case EngineNode.Sprite2DWithState(sprite, st) => EngineNode.Sprite2DWithState(CanvasItem.setModulate(color, sprite), st)
@@ -301,6 +312,7 @@ instance CanvasItem[EngineNode[s]] {
         case EngineNode.CanvasLayerWithState(cl, st) => EngineNode.CanvasLayerWithState(CanvasItem.setModulate(color, cl), st)
         case EngineNode.ControlWithState(ctrl, st) => EngineNode.ControlWithState(CanvasItem.setModulate(color, ctrl), st)
         case EngineNode.ButtonWithState(btn, st) => EngineNode.ButtonWithState(CanvasItem.setModulate(color, btn), st)
+        case EngineNode.Camera2DWithState(cam, st) => EngineNode.Camera2DWithState(CanvasItem.setModulate(color, cam), st)
     }
     pub def getZIndex(node: EngineNode[s]): Int32 = match node {
         case EngineNode.Sprite2DWithState(sprite, _) => CanvasItem.getZIndex(sprite)
@@ -318,6 +330,7 @@ instance CanvasItem[EngineNode[s]] {
         case EngineNode.CanvasLayerWithState(cl, _) => CanvasItem.getZIndex(cl)
         case EngineNode.ControlWithState(ctrl, _) => CanvasItem.getZIndex(ctrl)
         case EngineNode.ButtonWithState(btn, _) => CanvasItem.getZIndex(btn)
+        case EngineNode.Camera2DWithState(cam, _) => CanvasItem.getZIndex(cam)
     }
     pub def setZIndex(zIndex: Int32, node: EngineNode[s]): EngineNode[s] = match node {
         case EngineNode.Sprite2DWithState(sprite, st) => EngineNode.Sprite2DWithState(CanvasItem.setZIndex(zIndex, sprite), st)
@@ -335,6 +348,7 @@ instance CanvasItem[EngineNode[s]] {
         case EngineNode.CanvasLayerWithState(cl, st) => EngineNode.CanvasLayerWithState(CanvasItem.setZIndex(zIndex, cl), st)
         case EngineNode.ControlWithState(ctrl, st) => EngineNode.ControlWithState(CanvasItem.setZIndex(zIndex, ctrl), st)
         case EngineNode.ButtonWithState(btn, st) => EngineNode.ButtonWithState(CanvasItem.setZIndex(zIndex, btn), st)
+        case EngineNode.Camera2DWithState(cam, st) => EngineNode.Camera2DWithState(CanvasItem.setZIndex(zIndex, cam), st)
     }
 }
 
@@ -357,6 +371,7 @@ instance Node2D[EngineNode[s]] {
         case EngineNode.CanvasLayerWithState(cl, _) => Node2D.getPosition(cl)
         case EngineNode.ControlWithState(ctrl, _) => Node2D.getPosition(ctrl)
         case EngineNode.ButtonWithState(btn, _) => Node2D.getPosition(btn)
+        case EngineNode.Camera2DWithState(cam, _) => Node2D.getPosition(cam)
     }
     pub def setPosition(position: Vec2.Vec2, node: EngineNode[s]): EngineNode[s] = match node {
         case EngineNode.Sprite2DWithState(sprite, st) => EngineNode.Sprite2DWithState(Node2D.setPosition(position, sprite), st)
@@ -374,6 +389,7 @@ instance Node2D[EngineNode[s]] {
         case EngineNode.CanvasLayerWithState(cl, st) => EngineNode.CanvasLayerWithState(Node2D.setPosition(position, cl), st)
         case EngineNode.ControlWithState(ctrl, st) => EngineNode.ControlWithState(Node2D.setPosition(position, ctrl), st)
         case EngineNode.ButtonWithState(btn, st) => EngineNode.ButtonWithState(Node2D.setPosition(position, btn), st)
+        case EngineNode.Camera2DWithState(cam, st) => EngineNode.Camera2DWithState(Node2D.setPosition(position, cam), st)
     }
     pub def getRotation(node: EngineNode[s]): Float64 = match node {
         case EngineNode.Sprite2DWithState(sprite, _) => Node2D.getRotation(sprite)
@@ -391,6 +407,7 @@ instance Node2D[EngineNode[s]] {
         case EngineNode.CanvasLayerWithState(cl, _) => Node2D.getRotation(cl)
         case EngineNode.ControlWithState(ctrl, _) => Node2D.getRotation(ctrl)
         case EngineNode.ButtonWithState(btn, _) => Node2D.getRotation(btn)
+        case EngineNode.Camera2DWithState(cam, _) => Node2D.getRotation(cam)
     }
     pub def setRotation(rotation: Float64, node: EngineNode[s]): EngineNode[s] = match node {
         case EngineNode.Sprite2DWithState(sprite, st) => EngineNode.Sprite2DWithState(Node2D.setRotation(rotation, sprite), st)
@@ -408,6 +425,7 @@ instance Node2D[EngineNode[s]] {
         case EngineNode.CanvasLayerWithState(cl, st) => EngineNode.CanvasLayerWithState(Node2D.setRotation(rotation, cl), st)
         case EngineNode.ControlWithState(ctrl, st) => EngineNode.ControlWithState(Node2D.setRotation(rotation, ctrl), st)
         case EngineNode.ButtonWithState(btn, st) => EngineNode.ButtonWithState(Node2D.setRotation(rotation, btn), st)
+        case EngineNode.Camera2DWithState(cam, st) => EngineNode.Camera2DWithState(Node2D.setRotation(rotation, cam), st)
     }
     pub def getScale(node: EngineNode[s]): Vec2.Vec2 = match node {
         case EngineNode.Sprite2DWithState(sprite, _) => Node2D.getScale(sprite)
@@ -425,6 +443,7 @@ instance Node2D[EngineNode[s]] {
         case EngineNode.CanvasLayerWithState(cl, _) => Node2D.getScale(cl)
         case EngineNode.ControlWithState(ctrl, _) => Node2D.getScale(ctrl)
         case EngineNode.ButtonWithState(btn, _) => Node2D.getScale(btn)
+        case EngineNode.Camera2DWithState(cam, _) => Node2D.getScale(cam)
     }
     pub def setScale(scale: Vec2.Vec2, node: EngineNode[s]): EngineNode[s] = match node {
         case EngineNode.Sprite2DWithState(sprite, st) => EngineNode.Sprite2DWithState(Node2D.setScale(scale, sprite), st)
@@ -442,6 +461,7 @@ instance Node2D[EngineNode[s]] {
         case EngineNode.CanvasLayerWithState(cl, st) => EngineNode.CanvasLayerWithState(Node2D.setScale(scale, cl), st)
         case EngineNode.ControlWithState(ctrl, st) => EngineNode.ControlWithState(Node2D.setScale(scale, ctrl), st)
         case EngineNode.ButtonWithState(btn, st) => EngineNode.ButtonWithState(Node2D.setScale(scale, btn), st)
+        case EngineNode.Camera2DWithState(cam, st) => EngineNode.Camera2DWithState(Node2D.setScale(scale, cam), st)
     }
     pub def getSkew(node: EngineNode[s]): Float64 = match node {
         case EngineNode.Sprite2DWithState(sprite, _) => Node2D.getSkew(sprite)
@@ -459,6 +479,7 @@ instance Node2D[EngineNode[s]] {
         case EngineNode.CanvasLayerWithState(cl, _) => Node2D.getSkew(cl)
         case EngineNode.ControlWithState(ctrl, _) => Node2D.getSkew(ctrl)
         case EngineNode.ButtonWithState(btn, _) => Node2D.getSkew(btn)
+        case EngineNode.Camera2DWithState(cam, _) => Node2D.getSkew(cam)
     }
     pub def setSkew(skew: Float64, node: EngineNode[s]): EngineNode[s] = match node {
         case EngineNode.Sprite2DWithState(sprite, st) => EngineNode.Sprite2DWithState(Node2D.setSkew(skew, sprite), st)
@@ -476,6 +497,7 @@ instance Node2D[EngineNode[s]] {
         case EngineNode.CanvasLayerWithState(cl, st) => EngineNode.CanvasLayerWithState(Node2D.setSkew(skew, cl), st)
         case EngineNode.ControlWithState(ctrl, st) => EngineNode.ControlWithState(Node2D.setSkew(skew, ctrl), st)
         case EngineNode.ButtonWithState(btn, st) => EngineNode.ButtonWithState(Node2D.setSkew(skew, btn), st)
+        case EngineNode.Camera2DWithState(cam, st) => EngineNode.Camera2DWithState(Node2D.setSkew(skew, cam), st)
     }
 }
 
@@ -530,6 +552,7 @@ instance GameEngine.Renderable[EngineNode[s]] {
             case EngineNode.ControlWithState(_, _) => Nil
             case EngineNode.ButtonWithState(btn, _) =>
                 Button.toDrawables(btn, globalPos)
+            case EngineNode.Camera2DWithState(_, _) => Nil
             case _ =>
                 EngineNode.fallbackDrawable(node, globalPos) :: Nil
         }
