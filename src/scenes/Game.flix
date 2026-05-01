@@ -85,8 +85,8 @@ instance Node[NodeTag] {
 // ========================================================================
 
 instance AreaHandler[NodeTag] {
-    pub def onAreaEntered(_selfPath: NodePath, selfState: NodeTag,
-                          _otherPath: NodePath, otherState: NodeTag,
+    pub def onAreaEntered(selfPath: NodePath, selfState: NodeTag,
+                          otherPath: NodePath, otherState: NodeTag,
                           scene: Scene[NodeTag]): Scene[NodeTag] =
         match (selfState, otherState) {
             case (NodeTag.BirdArea, NodeTag.Ground) =>
@@ -94,9 +94,9 @@ instance AreaHandler[NodeTag] {
             case (NodeTag.Ground, NodeTag.BirdArea) =>
                 Game.onBirdHitGround(scene)
             case (NodeTag.BirdArea, NodeTag.Pipe) =>
-                Game.onBirdHitPipe(scene)
+                Game.onBirdHitPipe(pipePath = otherPath, scene)
             case (NodeTag.Pipe, NodeTag.BirdArea) =>
-                Game.onBirdHitPipe(scene)
+                Game.onBirdHitPipe(pipePath = selfPath, scene)
             case _ => scene
         }
 }
@@ -228,14 +228,26 @@ mod Game {
         }
 
     /// 鳥がパイプに衝突したときの処理
-    /// Flapping → Hit に遷移し、横移動を停止させる
-    pub def onBirdHitPipe(scene: Scene[NodeTag]): Scene[NodeTag] =
+    /// Flapping → Hit に遷移し、鳥をパイプの左端まで押し戻す
+    pub def onBirdHitPipe(pipePath: {pipePath = NodePath}, scene: Scene[NodeTag]): Scene[NodeTag] =
         let birdData = BirdScene.getBirdData(scene);
         match birdData#state {
             case BirdState.Flapping =>
-                scene |> BirdScene.setBirdState(BirdState.Hit)
+                let pipeX = Scene.globalPositionAt(pipePath#pipePath, scene)#x;
+                scene
+                    |> BirdScene.setBirdState(BirdState.Hit)
+                    |> pushBirdOutOfPipe(pipeX)
             case _ => scene
         }
+
+    /// 鳥をパイプの左端に押し戻す
+    def pushBirdOutOfPipe(pipeX: Float64, scene: Scene[NodeTag]): Scene[NodeTag] =
+        let birdRadius = 13.0;
+        let pipeHalfW = PipeScene.pipeHalfWidth();
+        scene |> BirdScene.mapBirdBody((body, birdData) ->
+            let pos = Node2D.getPosition(body);
+            (Node2D.setPosition({x = pipeX - pipeHalfW - birdRadius, y = pos#y}, body),
+             birdData))
 
     /// 鳥の Y 座標を地面の上端にクランプする
     def clampBirdAboveGround(scene: Scene[NodeTag]): Scene[NodeTag] =

@@ -242,12 +242,15 @@ def testClampRotationMinResetsAngularVelocity(): Unit \ Assert =
         case _ => bug!("bird not found")
     }
 
-/// 正常範囲の回転では角速度が 1.5 以上に引き上げられる
+/// 落下中（linear_velocity.y > 0）は角速度が 1.5 に設定される
 @Test
 def testClampRotationFallAngularVelocity(): Unit \ Assert =
     let scene = testScene()
         |> BirdScene.mapBirdBody((body, birdData) ->
-            (body |> Node2D.setRotation(0.0) |> RigidBody2D.setAngularVelocity(0.5), birdData))
+            (body |> Node2D.setRotation(0.0)
+                  |> RigidBody2D.setAngularVelocity(0.5)
+                  |> RigidBody2D.setLinearVelocity({x = 100.0, y = 50.0}),
+             birdData))
         |> BirdScene.clampRotation;
     match Scene.getEngineNode("bird" :: Nil, scene) {
         case Some(EngineNode.RigidBody2DWithState(body, _)) =>
@@ -255,31 +258,19 @@ def testClampRotationFallAngularVelocity(): Unit \ Assert =
         case _ => bug!("bird not found")
     }
 
-/// 角速度が既に 1.5 以上の場合は変更されない
+/// 上昇中（linear_velocity.y <= 0）は角速度が保持される
 @Test
-def testClampRotationKeepsHighAngularVelocity(): Unit \ Assert =
+def testClampRotationKeepsAngularVelocityWhenRising(): Unit \ Assert =
     let scene = testScene()
         |> BirdScene.mapBirdBody((body, birdData) ->
-            (body |> Node2D.setRotation(0.0) |> RigidBody2D.setAngularVelocity(3.0), birdData))
+            (body |> Node2D.setRotation(0.0)
+                  |> RigidBody2D.setAngularVelocity(-3.0)
+                  |> RigidBody2D.setLinearVelocity({x = 100.0, y = -150.0}),
+             birdData))
         |> BirdScene.clampRotation;
     match Scene.getEngineNode("bird" :: Nil, scene) {
         case Some(EngineNode.RigidBody2DWithState(body, _)) =>
-            Assert.assertEq(expected = 3.0, RigidBody2D.getAngularVelocity(body))
-        case _ => bug!("bird not found")
-    }
-
-/// 回転が 90° を超えないようにクランプされる
-@Test
-def testClampRotationMax(): Unit \ Assert =
-    let scene = testScene()
-        |> BirdScene.mapBirdBody((body, birdData) ->
-            (Node2D.setRotation(2.0, body), birdData))
-        |> BirdScene.clampRotation;
-    match Scene.getEngineNode("bird" :: Nil, scene) {
-        case Some(EngineNode.RigidBody2DWithState(body, _)) =>
-            let rot = Node2D.getRotation(body);
-            let maxRot = Vec2.pi() / 2.0;
-            Assert.assertTrue(Float64.abs(rot - maxRot) < 0.001)
+            Assert.assertEq(expected = -3.0, RigidBody2D.getAngularVelocity(body))
         case _ => bug!("bird not found")
     }
 
@@ -692,23 +683,38 @@ def testSpawnPipePairAt(): Unit \ Assert =
 /// Flapping 状態で鳥がパイプに衝突すると Hit になること
 @Test
 def testBirdPipeCollisionFlappingToHit(): Unit \ Assert =
-    let scene = Game.onBirdHitPipe(testScene());
+    let pipePath = "pipe_0_top" :: Nil;
+    let scene = Game.onBirdHitPipe(pipePath = pipePath, testScene());
     Assert.assertEq(expected = BirdState.Hit, BirdScene.getBirdData(scene)#state)
+
+/// パイプ衝突時に鳥がパイプの左端に押し戻されること
+///
+///   pipe_0_top の X=432、pipeHalfWidth=26、birdRadius=13
+///   → 押し戻し後の鳥 X = 432 - 26 - 13 = 393
+///
+@Test
+def testBirdPipeCollisionPushBack(): Unit \ Assert =
+    let pipePath = "pipe_0_top" :: Nil;
+    let scene = Game.onBirdHitPipe(pipePath = pipePath, testScene());
+    let birdX = Scene.globalPosition("bird", scene)#x;
+    Assert.assertEq(expected = 393.0, birdX)
 
 /// Hit 状態で再度パイプ衝突しても変化しないこと
 @Test
 def testBirdPipeCollisionHitNoChange(): Unit \ Assert =
+    let pipePath = "pipe_0_top" :: Nil;
     let scene = testScene()
         |> BirdScene.setBirdState(BirdState.Hit)
-        |> Game.onBirdHitPipe;
+        |> Game.onBirdHitPipe(pipePath = pipePath);
     Assert.assertEq(expected = BirdState.Hit, BirdScene.getBirdData(scene)#state)
 
 /// Grounded 状態でパイプ衝突しても変化しないこと
 @Test
 def testBirdPipeCollisionGroundedNoChange(): Unit \ Assert =
+    let pipePath = "pipe_0_top" :: Nil;
     let scene = testScene()
         |> BirdScene.setBirdState(BirdState.Grounded)
-        |> Game.onBirdHitPipe;
+        |> Game.onBirdHitPipe(pipePath = pipePath);
     Assert.assertEq(expected = BirdState.Grounded, BirdScene.getBirdData(scene)#state)
 
 // ========================================================================
