@@ -385,17 +385,22 @@ mod Camera2D {
     /// カメラの視点でのスクリーン座標に変換できる。
     /// CanvasLayer 配下のノードにはこのオフセットを適用しない。
     ///
-    ///   ワールド空間:
-    ///     camera ------> node
-    ///              diff
-    ///
-    ///   スクリーン空間:
-    ///     viewport_center + diff = screen_position
+    /// アンカーモードによって計算が異なる:
+    ///   - DragCenter: position+offset がビューポート中心
+    ///   - FixedTopLeft: position+offset がビューポート左上
     pub def getViewportOffset(camera: Camera2D, viewportSize: {viewportWidth = Float64, viewportHeight = Float64}): Vec2.Vec2 =
-        let screenCenter = getScreenCenterPosition(camera);
-        let halfW = viewportSize#viewportWidth / 2.0;
-        let halfH = viewportSize#viewportHeight / 2.0;
-        {x = screenCenter#x - halfW, y = screenCenter#y - halfH}
+        let Camera2D.Camera2D(r) = camera;
+        match r#anchorMode {
+            case Camera2DAnchorMode.DragCenter =>
+                let screenCenter = getScreenCenterPosition(camera);
+                let halfW = viewportSize#viewportWidth / 2.0;
+                let halfH = viewportSize#viewportHeight / 2.0;
+                {x = screenCenter#x - halfW, y = screenCenter#y - halfH}
+            case Camera2DAnchorMode.FixedTopLeft =>
+                let rawX = r#position#x + r#offset#x;
+                let rawY = r#position#y + r#offset#y;
+                {x = rawX, y = rawY}
+        }
 }
 
 // ── CanvasItem 実装 ──

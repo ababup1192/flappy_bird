@@ -1,4 +1,4 @@
-// Tests for Flappy Bird Game module — Phase 1: 鳥 + 重力 + Flap
+// Tests for Flappy Bird Game module — Phase 1〜3
 
 // ========================================================================
 // テスト用ヘルパー
@@ -46,20 +46,25 @@ def vecToTuple(v: Vec2.Vec2): (Float64, Float64) = (v#x, v#y)
 // buildState: ノード数・構造
 // ========================================================================
 
-/// シーンには bird(+sprite) = 2 ノード
+/// シーンには bird(+sprite+area) + camera + background(+bg_sprite) + ground_0(+sprite) + ground_1(+sprite) = 10 ノード
 @Test
 def testBuildSceneNodeCount(): Unit \ Assert =
-    Assert.assertEq(expected = 2, Scene.nodeCount(testScene()))
+    Assert.assertEq(expected = 10, Scene.nodeCount(testScene()))
 
-/// ルートノードは 1 つ（bird のみ）
+/// ルートノードは 5 つ（bird, camera, background, ground_0, ground_1）
 @Test
 def testBuildSceneRootCount(): Unit \ Assert =
-    Assert.assertEq(expected = 1, Map.size(Scene.states(testScene())))
+    Assert.assertEq(expected = 5, Map.size(Scene.states(testScene())))
 
 /// 初期フェーズは Playing
 @Test
 def testBuildStatePhase(): Unit \ Assert =
     Assert.assertEq(expected = GamePhase.Playing, testState()#phase)
+
+/// 初期 groundCounter は 2（ground_0, ground_1 が配置済み）
+@Test
+def testBuildStateGroundCounter(): Unit \ Assert =
+    Assert.assertEq(expected = 2, testState()#groundCounter)
 
 // ========================================================================
 // BirdScene: 鳥の初期配置
@@ -85,7 +90,7 @@ def testBirdIsRigidBody(): Unit \ Assert =
         case _ => bug!("Expected RigidBody2DWithState")
     }
 
-/// 鳥の gravity_scale が 5.0 であること
+/// 鳥の gravity_scale が 1.0 であること
 @Test
 def testBirdGravityScale(): Unit \ Assert =
     match Scene.getEngineNode("bird" :: Nil, testScene()) {
@@ -111,17 +116,41 @@ def testBirdFlapAnimation(): Unit \ Assert =
         case _ => bug!("bird sprite not found")
     }
 
+/// 鳥の初期 X 速度が 100 であること（横スクロール用）
+@Test
+def testBirdInitialXVelocity(): Unit \ Assert =
+    match Scene.getEngineNode("bird" :: Nil, testScene()) {
+        case Some(EngineNode.RigidBody2DWithState(body, _)) =>
+            Assert.assertEq(expected = 100.0, RigidBody2D.getLinearVelocity(body)#x)
+        case _ => bug!("bird not found")
+    }
+
+// ========================================================================
+// BirdScene: Area2D 子ノード（衝突検知用）
+// ========================================================================
+
+/// 鳥に Area2D 子ノードが存在すること
+@Test
+def testBirdHasAreaChild(): Unit \ Assert =
+    match Scene.getState("bird" :: "area" :: Nil, testScene()) {
+        case Some(NodeTag.BirdArea) => Assert.assertTrue(true)
+        case _ => bug!("Expected BirdArea child")
+    }
+
+/// Area2D の monitoring が true であること（衝突を検知する側）
+@Test
+def testBirdAreaMonitoring(): Unit \ Assert =
+    match Scene.getEngineNode("bird" :: "area" :: Nil, testScene()) {
+        case Some(EngineNode.Area2DWithState(area, _)) =>
+            Assert.assertTrue(CollisionObject2D.isMonitoring(area))
+        case _ => bug!("bird area not found")
+    }
+
 // ========================================================================
 // 重力: RigidBody2D が重力で落下する
 // ========================================================================
 
 /// 重力により鳥が下方向に移動する
-///
-///   初期位置: (144, 256)
-///   重力: 980 * 5.0 = 4900 px/s²
-///   0.1 秒後: vy = 4900 * 0.1 = 490, y = 256 + 490 * 0.1 = 305
-///   ※近似値（積分順序による誤差あり）
-///
 @Test
 def testBirdFallsWithGravity(): Unit \ Assert =
     let scene = testScene()
@@ -162,11 +191,6 @@ def testFlapSetsAngularVelocity(): Unit \ Assert =
     }
 
 /// flap 後に重力を適用すると、一度上昇してから落下する
-///
-///   flap → vy = -300
-///   0.02s 後: vy = -300 + 4900*0.02 = -202, y = 256 + (-300)*0.02 = 250
-///   → 256 より上に行っている
-///
 @Test
 def testFlapThenGravity(): Unit \ Assert =
     let scene = testScene()
@@ -270,7 +294,6 @@ def testFlapIntegrateClamp(): Unit \ Assert =
     }
 
 /// フラップ後の角速度は clampRotation で 1.5 に引き上げられる
-/// （-3 → 物理積分 → 回転適用 → clamp で angvel >= 1.5）
 @Test
 def testFlapAngularVelocityAfterClamp(): Unit \ Assert =
     let scene = testScene()
@@ -296,4 +319,254 @@ def testBirdSpriteAnimationAdvances(): Unit \ Assert =
         case Some(EngineNode.AnimSprite2DWithState(sprite, _)) =>
             Assert.assertEq(expected = "bird_orange_1", AnimatedSprite2D.currentTexture(sprite))
         case _ => bug!("bird sprite not found after process")
+    }
+
+// ========================================================================
+// Phase 2: 地面の構造
+// ========================================================================
+
+/// 地面タイルが 2 枚存在すること
+@Test
+def testGroundTileCount(): Unit \ Assert =
+    let paths = Scene.getNodesInGroup(GroundScene.groundGroup(), testScene());
+    Assert.assertEq(expected = 2, List.length(paths))
+
+/// 地面タイル 0 の位置（中心 X=168, Y=456）
+@Test
+def testGround0Position(): Unit \ Assert =
+    let pos = Scene.globalPosition("ground_0", testScene());
+    Assert.assertEq(expected = (168.0, 456.0), vecToTuple(pos))
+
+/// 地面タイル 1 の位置（中心 X=504, Y=456）
+@Test
+def testGround1Position(): Unit \ Assert =
+    let pos = Scene.globalPosition("ground_1", testScene());
+    Assert.assertEq(expected = (504.0, 456.0), vecToTuple(pos))
+
+/// 地面ノードが StaticBody2D であること
+@Test
+def testGroundIsStaticBody(): Unit \ Assert =
+    match Scene.getEngineNode("ground_0" :: Nil, testScene()) {
+        case Some(EngineNode.StaticBody2DWithState(_, NodeTag.Ground)) =>
+            Assert.assertTrue(true)
+        case _ => bug!("Expected StaticBody2DWithState with Ground tag")
+    }
+
+/// 地面の StaticBody2D が monitorable=true であること（鳥の Area2D から検知される）
+@Test
+def testGroundMonitorable(): Unit \ Assert =
+    match Scene.getEngineNode("ground_0" :: Nil, testScene()) {
+        case Some(EngineNode.StaticBody2DWithState(body, _)) =>
+            Assert.assertTrue(CollisionObject2D.isMonitorable(body))
+        case _ => bug!("ground not found")
+    }
+
+/// 地面にスプライト子ノードがあること
+@Test
+def testGroundHasSpriteChild(): Unit \ Assert =
+    match Scene.getState("ground_0" :: "sprite" :: Nil, testScene()) {
+        case Some(NodeTag.NoTag) => Assert.assertTrue(true)
+        case _ => bug!("Expected NoTag child for ground sprite")
+    }
+
+// ========================================================================
+// Phase 2: 地面リサイクル
+// ========================================================================
+
+/// ビューポート左端より右にあるタイルはリサイクルされない
+@Test
+def testRecycleGroundsNoOp(): Unit \ Assert =
+    let scene = testScene();
+    let (recycledScene, counter, _nextX) =
+        GroundScene.recycleGrounds(0.0, 2, 840.0, scene);
+    // 何も変わらないこと
+    Assert.assertEq(expected = (2, 2),
+        (counter, List.length(Scene.getNodesInGroup(GroundScene.groundGroup(), recycledScene))))
+
+/// ビューポート左端を超えたタイルがリサイクルされる
+///
+///   viewportLeft = 400 のとき、ground_0(center=168, right=336) は画面外
+///   → ground_0 が削除され、ground_2 が nextGroundX=840 に生成される
+///
+@Test
+def testRecycleGroundsRemovesOffScreen(): Unit \ Assert =
+    let scene = testScene();
+    let (recycledScene, counter, nextX) =
+        GroundScene.recycleGrounds(400.0, 2, 840.0, scene);
+    let paths = Scene.getNodesInGroup(GroundScene.groundGroup(), recycledScene);
+    // タイル数は変わらず 2 枚
+    Assert.assertEq(expected = (2, 3, 1176.0),
+        (List.length(paths), counter, nextX))
+
+/// リサイクル後の新タイルが正しい位置にあること
+@Test
+def testRecycleGroundsNewTilePosition(): Unit \ Assert =
+    let scene = testScene();
+    let (recycledScene, _counter, _nextX) =
+        GroundScene.recycleGrounds(400.0, 2, 840.0, scene);
+    let pos = Scene.globalPosition("ground_2", recycledScene);
+    Assert.assertEq(expected = (840.0, 456.0), vecToTuple(pos))
+
+// ========================================================================
+// Phase 2: 鳥の状態遷移 — setBirdState
+// ========================================================================
+
+/// Grounded 状態にすると速度がゼロになること
+@Test
+def testSetBirdStateGroundedStopsVelocity(): Unit \ Assert =
+    let scene = testScene()
+        |> BirdScene.flap
+        |> BirdScene.setBirdState(BirdState.Grounded);
+    match Scene.getEngineNode("bird" :: Nil, scene) {
+        case Some(EngineNode.RigidBody2DWithState(body, _)) =>
+            Assert.assertEq(expected = (0.0, 0.0),
+                vecToTuple(RigidBody2D.getLinearVelocity(body)))
+        case _ => bug!("bird not found")
+    }
+
+/// Grounded 状態にすると重力が無効になること
+@Test
+def testSetBirdStateGroundedDisablesGravity(): Unit \ Assert =
+    let scene = testScene()
+        |> BirdScene.setBirdState(BirdState.Grounded);
+    match Scene.getEngineNode("bird" :: Nil, scene) {
+        case Some(EngineNode.RigidBody2DWithState(body, _)) =>
+            Assert.assertEq(expected = 0.0, RigidBody2D.getGravityScale(body))
+        case _ => bug!("bird not found")
+    }
+
+/// Grounded 状態にすると BirdData の state が Grounded になること
+@Test
+def testSetBirdStateGroundedUpdatesData(): Unit \ Assert =
+    let scene = testScene()
+        |> BirdScene.setBirdState(BirdState.Grounded);
+    Assert.assertEq(expected = BirdState.Grounded, BirdScene.getBirdData(scene)#state)
+
+/// Hit 状態にすると angular velocity が 2.0 になること（落下回転演出）
+@Test
+def testSetBirdStateHitSetsAngularVelocity(): Unit \ Assert =
+    let scene = testScene()
+        |> BirdScene.setBirdState(BirdState.Hit);
+    match Scene.getEngineNode("bird" :: Nil, scene) {
+        case Some(EngineNode.RigidBody2DWithState(body, _)) =>
+            Assert.assertEq(expected = 2.0, RigidBody2D.getAngularVelocity(body))
+        case _ => bug!("bird not found")
+    }
+
+// ========================================================================
+// Phase 2: 鳥と地面の衝突応答
+// ========================================================================
+
+/// 鳥が地面に衝突すると Grounded になること
+@Test
+def testBirdGroundCollision(): Unit \ Assert =
+    let scene = Game.onBirdHitGround(testScene());
+    Assert.assertEq(expected = BirdState.Grounded, BirdScene.getBirdData(scene)#state)
+
+/// 鳥が地面に衝突すると地面の上にクランプされること
+///
+///   鳥を地面に重なる位置 (144, 470) に移動してから衝突処理
+///   → 地面上端(400) - 鳥半径(13) = 387 にクランプ
+///
+@Test
+def testBirdClampedAboveGround(): Unit \ Assert =
+    let scene = testScene()
+        |> BirdScene.mapBirdBody((body, birdData) ->
+            (Node2D.setPosition({x = 144.0, y = 470.0}, body), birdData))
+        |> Game.onBirdHitGround;
+    let pos = Scene.globalPosition("bird", scene);
+    Assert.assertEq(expected = 387.0, pos#y)
+
+// ========================================================================
+// Phase 3: カメラ
+// ========================================================================
+
+/// カメラが存在し、有効であること
+@Test
+def testCameraExists(): Unit \ Assert =
+    match Scene.getEngineNode("camera" :: Nil, testScene()) {
+        case Some(EngineNode.Camera2DWithState(cam, _)) =>
+            Assert.assertTrue(Camera2D.isEnabled(cam))
+        case _ => bug!("camera not found")
+    }
+
+/// カメラのアンカーモードが FixedTopLeft であること
+@Test
+def testCameraAnchorMode(): Unit \ Assert =
+    match Scene.getEngineNode("camera" :: Nil, testScene()) {
+        case Some(EngineNode.Camera2DWithState(cam, _)) =>
+            Assert.assertEq(expected = Camera2DAnchorMode.FixedTopLeft,
+                Camera2D.getAnchorMode(cam))
+        case _ => bug!("camera not found")
+    }
+
+/// カメラのオフセットが (-72, 0) であること
+@Test
+def testCameraOffset(): Unit \ Assert =
+    match Scene.getEngineNode("camera" :: Nil, testScene()) {
+        case Some(EngineNode.Camera2DWithState(cam, _)) =>
+            Assert.assertEq(expected = (-72.0, 0.0),
+                vecToTuple(Camera2D.getOffset(cam)))
+        case _ => bug!("camera not found")
+    }
+
+/// カメラの初期位置が鳥の X 座標と一致すること
+@Test
+def testCameraInitialPosition(): Unit \ Assert =
+    match Scene.getEngineNode("camera" :: Nil, testScene()) {
+        case Some(EngineNode.Camera2DWithState(cam, _)) =>
+            let camPos = Node2D.getPosition(cam);
+            Assert.assertEq(expected = (144.0, 0.0), vecToTuple(camPos))
+        case _ => bug!("camera not found")
+    }
+
+// ========================================================================
+// Phase 3: Camera2D FixedTopLeft ビューポートオフセット
+// ========================================================================
+
+/// FixedTopLeft モードでは position+offset がビューポート左上になること
+///
+///   camera position=(200, 0), offset=(-72, 0)
+///   → ビューポート左上 = (128, 0)
+///
+@Test
+def testFixedTopLeftViewportOffset(): Unit \ Assert =
+    let cam = Camera2D.makeWithOffset({x = 200.0, y = 0.0}, {x = -72.0, y = 0.0})
+        |> Camera2D.setAnchorMode(Camera2DAnchorMode.FixedTopLeft);
+    let offset = Camera2D.getViewportOffset(cam,
+        {viewportWidth = 288.0, viewportHeight = 512.0});
+    Assert.assertEq(expected = (128.0, 0.0), vecToTuple(offset))
+
+/// DragCenter モードでは position+offset がビューポート中心になること
+///
+///   camera position=(200, 256), offset=(0, 0)
+///   → ビューポート左上 = (200-144, 256-256) = (56, 0)
+///
+@Test
+def testDragCenterViewportOffset(): Unit \ Assert =
+    let cam = Camera2D.make({x = 200.0, y = 256.0});
+    let offset = Camera2D.getViewportOffset(cam,
+        {viewportWidth = 288.0, viewportHeight = 512.0});
+    Assert.assertEq(expected = (56.0, 0.0), vecToTuple(offset))
+
+// ========================================================================
+// Phase 3: 背景
+// ========================================================================
+
+/// 背景が CanvasLayer であること
+@Test
+def testBackgroundIsCanvasLayer(): Unit \ Assert =
+    match Scene.getEngineNode("background" :: Nil, testScene()) {
+        case Some(EngineNode.CanvasLayerWithState(cl, _)) =>
+            Assert.assertEq(expected = -1, CanvasLayer.getDrawLayer(cl))
+        case _ => bug!("background not found")
+    }
+
+/// 背景にスプライト子ノードがあること
+@Test
+def testBackgroundHasSprite(): Unit \ Assert =
+    match Scene.getEngineNode("background" :: "bg_sprite" :: Nil, testScene()) {
+        case Some(EngineNode.Sprite2DWithState(_, _)) =>
+            Assert.assertTrue(true)
+        case _ => bug!("background sprite not found")
     }

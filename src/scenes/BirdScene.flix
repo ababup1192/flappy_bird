@@ -1,11 +1,13 @@
 // BirdScene — Flappy Bird の鳥シーン構築・フラップ・回転制御
 //
-// 鳥は RigidBody2D（gravity_scale=5.0）で重力を受け、フラップで上昇する。
+// 鳥は RigidBody2D（gravity_scale=1.0）で重力を受け、フラップで上昇する。
 // 回転は物理エンジンの angularVelocity で制御し、フラップ後のクランプは
 // 物理積分の後に呼び出す clampRotation で行う。
+// 衝突検知用の Area2D 子ノードを持つ。
 //
 //   RigidBody2DWithState(body, Bird(BirdData))
-//     └── AnimSprite2DWithState(sprite, NoTag)
+//     ├── AnimSprite2DWithState(sprite, NoTag)
+//     └── Area2DWithState(area, BirdArea)
 
 mod BirdScene {
     use NodeBuilder.{position, rotation, show, hide}
@@ -32,8 +34,14 @@ mod BirdScene {
     /// スプライト子ノード名
     def spriteName(): String = "sprite"
 
-    /// スプライト子ノードパス（将来フェーズで使用予定）
+    /// スプライト子ノードパス
     pub def spritePath(): NodePath = name() :: spriteName() :: Nil
+
+    /// 衝突検知用 Area2D 子ノード名
+    def areaName(): String = "area"
+
+    /// 衝突検知用 Area2D 子ノードパス
+    pub def areaPath(): NodePath = name() :: areaName() :: Nil
 
     // ========================================================================
     // 定数 — 物理パラメータ（2x スケール）
@@ -90,22 +98,27 @@ mod BirdScene {
     // シーン構築
     // ========================================================================
 
-    /// 鳥のノードをシーンに追加する（RigidBody2D + 子 AnimatedSprite2D）
+    /// 鳥のノードをシーンに追加する
+    /// RigidBody2D（物理ボディ）+ AnimatedSprite2D（見た目）+ Area2D（衝突検知）
     pub def addBird(scene: Scene[NodeTag]): Scene[NodeTag] =
         let body = RigidBody2D.make(startPosition(), birdCollisionShape())
-            |> RigidBody2D.setGravityScale(birdGravityScale());
+            |> RigidBody2D.setGravityScale(birdGravityScale())
+            |> RigidBody2D.setLinearVelocity({x = birdSpeed(), y = 0.0});
         let sprite = AnimatedSprite2D.make(
             birdAnimations(),
             initialAnimation = flapAnimName(),
             fps = 10.0,
             Vec2.zero(),
-            {x = 1.0, y = 1.0});
+            {x = 2.0, y = 2.0});
+        let area = Area2D.make(Vec2.zero(), birdCollisionShape());
         let birdData: BirdData = {state = BirdState.Flapping, speed = birdSpeed()};
         scene
             |> Scene.addNode(name(),
                 EngineNode.RigidBody2DWithState(body, NodeTag.Bird(birdData)))
             |> Scene.addChild(name(), spriteName(),
                 EngineNode.AnimSprite2DWithState(sprite, NodeTag.NoTag))
+            |> Scene.addChild(name(), areaName(),
+                EngineNode.Area2DWithState(area, NodeTag.BirdArea))
 
     // ========================================================================
     // フラップ
@@ -150,6 +163,32 @@ mod BirdScene {
                         |> RigidBody2D.setAngularVelocity(clampedAngVel),
                      birdData)
                 case _ => (body, birdData)
+            })
+
+    // ========================================================================
+    // 状態遷移
+    // ========================================================================
+
+    /// 鳥の状態を変更し、状態に応じた物理パラメータを設定する
+    /// Grounded: 停止（速度ゼロ、重力無効）
+    /// Hit: 横移動停止、回転加速（パイプ衝突後の落下演出）
+    pub def setBirdState(newState: BirdState, scene: Scene[NodeTag]): Scene[NodeTag] =
+        scene |> mapBirdBody((body, birdData) ->
+            let updatedData = {state = newState | birdData};
+            match newState {
+                case BirdState.Grounded =>
+                    (body
+                        |> RigidBody2D.setLinearVelocity(Vec2.zero())
+                        |> RigidBody2D.setAngularVelocity(0.0)
+                        |> RigidBody2D.setGravityScale(0.0),
+                     updatedData)
+                case BirdState.Hit =>
+                    (body
+                        |> RigidBody2D.setLinearVelocity(Vec2.zero())
+                        |> RigidBody2D.setAngularVelocity(2.0),
+                     updatedData)
+                case _ =>
+                    (body, updatedData)
             })
 
     // ========================================================================
