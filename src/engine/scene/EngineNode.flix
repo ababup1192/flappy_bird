@@ -583,7 +583,9 @@ instance GameEngine.Renderable[EngineNode[s]] {
                 Button.toDrawables(btn, globalPos)
             case EngineNode.Camera2DWithState(_, _) => Nil
             case EngineNode.StaticBody2DWithState(_, _) => Nil
-            case _ =>
-                EngineNode.fallbackDrawable(node, globalPos) :: Nil
+            case EngineNode.RigidBody2DWithState(_, _) => Nil
+            case EngineNode.Area2DWithState(_, _) => Nil
+            case EngineNode.Body2DWithState(_, _) => Nil
+            case EngineNode.Marker2DWithState(_, _) => Nil
         }
 }
