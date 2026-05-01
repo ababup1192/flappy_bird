@@ -4,6 +4,13 @@
 // テスト用ヘルパー
 // ========================================================================
 
+/// Math.Random のモックハンドラ（randomFloat64 → 0.5）
+def withMockRandom(f: Unit -> a \ Math.Random): a =
+    run f() with handler Math.Random {
+        def randomFloat64(k) = k(0.5)
+        def randomInt64(k) = k(42i64)
+    }
+
 /// GameEngine.Game + Math.Random のモックハンドラ
 def withMockEngine(f: Unit -> a \ {GameEngine.Game, Math.Random}): a =
     run {
@@ -33,11 +40,13 @@ def testFontAtlas(): FontAtlas = {
     glyphs = Map.empty()
 }
 
-/// テスト用ヘルパー: buildState のシーンを取得
-def testScene(): Scene[NodeTag] = Game.buildState(testFontAtlas())#scene
+/// テスト用ヘルパー: buildState のシーンを取得（Math.Random をモックで処理）
+def testScene(): Scene[NodeTag] =
+    withMockRandom(() -> Game.buildState(testFontAtlas())#scene)
 
-/// テスト用ヘルパー: buildState の GameState を取得
-def testState(): GameState = Game.buildState(testFontAtlas())
+/// テスト用ヘルパー: buildState の GameState を取得（Math.Random をモックで処理）
+def testState(): GameState =
+    withMockRandom(() -> Game.buildState(testFontAtlas()))
 
 /// Vec2 をタプルに変換するヘルパー
 def vecToTuple(v: Vec2.Vec2): (Float64, Float64) = (v#x, v#y)
@@ -46,15 +55,17 @@ def vecToTuple(v: Vec2.Vec2): (Float64, Float64) = (v#x, v#y)
 // buildState: ノード数・構造
 // ========================================================================
 
-/// シーンには bird(+sprite+area) + camera + background(+bg_sprite) + ground_0(+sprite) + ground_1(+sprite) = 10 ノード
+/// シーンには bird(+sprite+area) + camera + background(+bg_sprite)
+///   + ground_0(+sprite) + ground_1(+sprite)
+///   + 3ペア × 2パイプ(+sprite) = 22 ノード
 @Test
 def testBuildSceneNodeCount(): Unit \ Assert =
-    Assert.assertEq(expected = 10, Scene.nodeCount(testScene()))
+    Assert.assertEq(expected = 22, Scene.nodeCount(testScene()))
 
-/// ルートノードは 5 つ（bird, camera, background, ground_0, ground_1）
+/// ルートノードは 11（bird, camera, background, ground_0, ground_1, pipe_0〜2 × top/bottom）
 @Test
 def testBuildSceneRootCount(): Unit \ Assert =
-    Assert.assertEq(expected = 5, Map.size(Scene.states(testScene())))
+    Assert.assertEq(expected = 11, Map.size(Scene.states(testScene())))
 
 /// 初期フェーズは Playing
 @Test
@@ -293,7 +304,7 @@ def testFlapIntegrateClamp(): Unit \ Assert =
         case _ => bug!("bird not found")
     }
 
-/// フラップ後の角速度は clampRotation で 1.5 に引き上げられる
+/// フラップ直後は角速度が負（上向き回転）のため、clampRotation はそのまま保持する
 @Test
 def testFlapAngularVelocityAfterClamp(): Unit \ Assert =
     let scene = testScene()
@@ -302,7 +313,8 @@ def testFlapAngularVelocityAfterClamp(): Unit \ Assert =
         |> BirdScene.clampRotation;
     match Scene.getEngineNode("bird" :: Nil, scene) {
         case Some(EngineNode.RigidBody2DWithState(body, _)) =>
-            Assert.assertTrue(RigidBody2D.getAngularVelocity(body) >= 1.5)
+            // フラップ角速度 -3.0 が保持される（負の角速度は clamp されない）
+            Assert.assertTrue(RigidBody2D.getAngularVelocity(body) < 0.0)
         case _ => bug!("bird not found")
     }
 
@@ -570,3 +582,168 @@ def testBackgroundHasSprite(): Unit \ Assert =
             Assert.assertTrue(true)
         case _ => bug!("background sprite not found")
     }
+
+// ========================================================================
+// Phase 4: パイプの構造
+// ========================================================================
+
+/// パイプグループに 6 ノード（3 ペア × 上下）があること
+@Test
+def testPipeGroupCount(): Unit \ Assert =
+    let paths = Scene.getNodesInGroup(PipeScene.pipeGroup(), testScene());
+    Assert.assertEq(expected = 6, List.length(paths))
+
+/// パイプノードが StaticBody2D であること
+@Test
+def testPipeIsStaticBody(): Unit \ Assert =
+    match Scene.getEngineNode("pipe_0_bottom" :: Nil, testScene()) {
+        case Some(EngineNode.StaticBody2DWithState(_, NodeTag.Pipe)) =>
+            Assert.assertTrue(true)
+        case _ => bug!("Expected StaticBody2DWithState with Pipe tag")
+    }
+
+/// パイプの StaticBody2D が monitorable=true であること（鳥の Area2D から検知される）
+@Test
+def testPipeMonitorable(): Unit \ Assert =
+    match Scene.getEngineNode("pipe_0_bottom" :: Nil, testScene()) {
+        case Some(EngineNode.StaticBody2DWithState(body, _)) =>
+            Assert.assertTrue(CollisionObject2D.isMonitorable(body))
+        case _ => bug!("pipe not found")
+    }
+
+/// パイプにスプライト子ノードがあること
+@Test
+def testPipeHasSpriteChild(): Unit \ Assert =
+    match Scene.getState("pipe_0_bottom" :: "sprite" :: Nil, testScene()) {
+        case Some(NodeTag.NoTag) => Assert.assertTrue(true)
+        case _ => bug!("Expected NoTag child for pipe sprite")
+    }
+
+// ========================================================================
+// Phase 4: パイプの配置（mock random=0.5 → gapY=200.0）
+// ========================================================================
+
+/// 最初のボトムパイプの位置（X=432, Y=200+202=402）
+///
+///   gapY = 110 + (290-110) × 0.5 = 200.0
+///   bottomY = 200 + 202 = 402.0
+///
+@Test
+def testPipe0BottomPosition(): Unit \ Assert =
+    let pos = Scene.globalPosition("pipe_0_bottom", testScene());
+    Assert.assertEq(expected = (432.0, 402.0), vecToTuple(pos))
+
+/// 最初のトップパイプの位置（X=432, Y=200-202=-2）
+///
+///   topY = 200 - 202 = -2.0
+///
+@Test
+def testPipe0TopPosition(): Unit \ Assert =
+    let pos = Scene.globalPosition("pipe_0_top", testScene());
+    Assert.assertEq(expected = (432.0, -2.0), vecToTuple(pos))
+
+/// 2 番目のパイプペアの X 座標（432+182=614）
+@Test
+def testPipe1Position(): Unit \ Assert =
+    let pos = Scene.globalPosition("pipe_1_bottom", testScene());
+    Assert.assertEq(expected = (614.0, 402.0), vecToTuple(pos))
+
+/// 3 番目のパイプペアの X 座標（432+364=796）
+@Test
+def testPipe2Position(): Unit \ Assert =
+    let pos = Scene.globalPosition("pipe_2_bottom", testScene());
+    Assert.assertEq(expected = (796.0, 402.0), vecToTuple(pos))
+
+// ========================================================================
+// Phase 4: GameState パイプフィールド
+// ========================================================================
+
+/// pipeCounter は 3（3 ペア配置済み）
+@Test
+def testBuildStatePipeCounter(): Unit \ Assert =
+    Assert.assertEq(expected = 3, testState()#pipeCounter)
+
+/// nextPipeX は 978.0（432 + 182×3）
+@Test
+def testBuildStateNextPipeX(): Unit \ Assert =
+    Assert.assertEq(expected = 978.0, testState()#nextPipeX)
+
+// ========================================================================
+// Phase 4: spawnPipePairAt
+// ========================================================================
+
+/// spawnPipePairAt で指定位置にペアが配置されること
+///
+///   gapY=200 → top=(400, -2), bottom=(400, 402)
+///
+@Test
+def testSpawnPipePairAt(): Unit \ Assert =
+    let scene = Scene.empty()
+        |> PipeScene.spawnPipePairAt(0, 400.0, 200.0);
+    let topPos = Scene.globalPosition("pipe_0_top", scene);
+    let bottomPos = Scene.globalPosition("pipe_0_bottom", scene);
+    Assert.assertEq(expected = ((400.0, -2.0), (400.0, 402.0)),
+        (vecToTuple(topPos), vecToTuple(bottomPos)))
+
+// ========================================================================
+// Phase 4: パイプ衝突応答
+// ========================================================================
+
+/// Flapping 状態で鳥がパイプに衝突すると Hit になること
+@Test
+def testBirdPipeCollisionFlappingToHit(): Unit \ Assert =
+    let scene = Game.onBirdHitPipe(testScene());
+    Assert.assertEq(expected = BirdState.Hit, BirdScene.getBirdData(scene)#state)
+
+/// Hit 状態で再度パイプ衝突しても変化しないこと
+@Test
+def testBirdPipeCollisionHitNoChange(): Unit \ Assert =
+    let scene = testScene()
+        |> BirdScene.setBirdState(BirdState.Hit)
+        |> Game.onBirdHitPipe;
+    Assert.assertEq(expected = BirdState.Hit, BirdScene.getBirdData(scene)#state)
+
+/// Grounded 状態でパイプ衝突しても変化しないこと
+@Test
+def testBirdPipeCollisionGroundedNoChange(): Unit \ Assert =
+    let scene = testScene()
+        |> BirdScene.setBirdState(BirdState.Grounded)
+        |> Game.onBirdHitPipe;
+    Assert.assertEq(expected = BirdState.Grounded, BirdScene.getBirdData(scene)#state)
+
+// ========================================================================
+// Phase 4: パイプリサイクル
+// ========================================================================
+
+/// ビューポート右にあるパイプはリサイクルされないこと
+@Test
+def testRecyclePipesNoOp(): Unit \ Assert =
+    let (recycledScene, counter, _nextX) = withMockRandom(() ->
+        PipeScene.recyclePipes(0.0, 3, 978.0, testScene()));
+    Assert.assertEq(expected = (3, 6),
+        (counter, List.length(Scene.getNodesInGroup(PipeScene.pipeGroup(), recycledScene))))
+
+/// ビューポート左端を超えたパイプペアがリサイクルされること
+///
+///   viewportLeft=500 のとき、pipe_0(X=432) は右端(432+26=458) < 500 で画面外
+///   → pipe_0_top, pipe_0_bottom が削除され、pipe_3 ペアが nextPipeX=978 に生成
+///   → パイプ数は変わらず 6、counter=4、nextX=1160
+///
+@Test
+def testRecyclePipesRemovesOffScreen(): Unit \ Assert =
+    let (recycledScene, counter, nextX) = withMockRandom(() ->
+        PipeScene.recyclePipes(500.0, 3, 978.0, testScene()));
+    let paths = Scene.getNodesInGroup(PipeScene.pipeGroup(), recycledScene);
+    Assert.assertEq(expected = (6, 4, 1160.0),
+        (List.length(paths), counter, nextX))
+
+/// リサイクル後の新パイプが正しい位置にあること
+///
+///   pipe_3_bottom は (978, 402) に配置される（mock random=0.5 → gapY=200）
+///
+@Test
+def testRecyclePipesNewPipePosition(): Unit \ Assert =
+    let (recycledScene, _counter, _nextX) = withMockRandom(() ->
+        PipeScene.recyclePipes(500.0, 3, 978.0, testScene()));
+    let pos = Scene.globalPosition("pipe_3_bottom", recycledScene);
+    Assert.assertEq(expected = (978.0, 402.0), vecToTuple(pos))

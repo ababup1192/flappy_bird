@@ -42,6 +42,8 @@ pub enum NodeTag {
     case BirdArea
     /// 地面の StaticBody2D に付与
     case Ground
+    /// パイプの StaticBody2D に付与
+    case Pipe
     /// タグ不要なノード（スプライト子ノード等）
     case NoTag
 }
@@ -56,12 +58,16 @@ pub enum NodeTag {
 /// flapPressed: 前フレームでフラップ入力があったか（連続入力防止用）
 /// groundCounter: 次の地面タイル番号（ユニーク名生成用）
 /// nextGroundX: 次の地面タイル中心の X 座標
+/// pipeCounter: 次のパイプペア番号（ユニーク名生成用）
+/// nextPipeX: 次のパイプペア中心の X 座標
 pub type alias GameState = {
     scene = Scene[NodeTag],
     phase = GamePhase,
     flapPressed = Bool,
     groundCounter = Int32,
-    nextGroundX = Float64
+    nextGroundX = Float64,
+    pipeCounter = Int32,
+    nextPipeX = Float64
 }
 
 // ========================================================================
@@ -87,6 +93,10 @@ instance AreaHandler[NodeTag] {
                 Game.onBirdHitGround(scene)
             case (NodeTag.Ground, NodeTag.BirdArea) =>
                 Game.onBirdHitGround(scene)
+            case (NodeTag.BirdArea, NodeTag.Pipe) =>
+                Game.onBirdHitPipe(scene)
+            case (NodeTag.Pipe, NodeTag.BirdArea) =>
+                Game.onBirdHitPipe(scene)
             case _ => scene
         }
 }
@@ -155,18 +165,22 @@ mod Game {
     // ========================================================================
 
     /// ゲームの初期状態を構築する
-    pub def buildState(_fontAtlas: FontAtlas): GameState =
+    pub def buildState(_fontAtlas: FontAtlas): GameState \ Math.Random =
         let (sceneWithGrounds, groundCounter, nextGroundX) =
             Scene.empty()
                 |> addBackground
                 |> BirdScene.addBird
                 |> addCamera
                 |> GroundScene.addGrounds;
-        {   scene = sceneWithGrounds,
+        let (sceneWithPipes, pipeCounter, nextPipeX) =
+            PipeScene.addPipes(sceneWithGrounds);
+        {   scene = sceneWithPipes,
             phase = GamePhase.Playing,
             flapPressed = false,
             groundCounter = groundCounter,
-            nextGroundX = nextGroundX
+            nextGroundX = nextGroundX,
+            pipeCounter = pipeCounter,
+            nextPipeX = nextPipeX
         }
 
     // ========================================================================
@@ -210,6 +224,16 @@ mod Game {
                 scene
                     |> BirdScene.setBirdState(BirdState.Grounded)
                     |> clampBirdAboveGround
+            case _ => scene
+        }
+
+    /// 鳥がパイプに衝突したときの処理
+    /// Flapping → Hit に遷移し、横移動を停止させる
+    pub def onBirdHitPipe(scene: Scene[NodeTag]): Scene[NodeTag] =
+        let birdData = BirdScene.getBirdData(scene);
+        match birdData#state {
+            case BirdState.Flapping =>
+                scene |> BirdScene.setBirdState(BirdState.Hit)
             case _ => scene
         }
 
@@ -301,11 +325,17 @@ mod Game {
                     let sceneWithCamera = followCamera(sceneAfterClamp);
                     // 地面をリサイクルする
                     let viewportLeftX = getViewportLeftX(sceneWithCamera);
-                    let (recycledScene, newCounter, newNextX) =
+                    let (groundRecycledScene, newCounter, newNextX) =
                         GroundScene.recycleGrounds(
                             viewportLeftX,
                             state#groundCounter, state#nextGroundX,
                             sceneWithCamera);
+                    // パイプをリサイクルする
+                    let (recycledScene, newPipeCounter, newNextPipeX) =
+                        PipeScene.recyclePipes(
+                            viewportLeftX,
+                            state#pipeCounter, state#nextPipeX,
+                            groundRecycledScene);
                     // 鳥が Grounded になったらゲームオーバー
                     let birdState = BirdScene.getBirdData(recycledScene)#state;
                     let nextPhase =
@@ -313,7 +343,8 @@ mod Game {
                         else GamePhase.Playing;
                     {scene = recycledScene, phase = nextPhase,
                      flapPressed = inputPressed,
-                     groundCounter = newCounter, nextGroundX = newNextX}
+                     groundCounter = newCounter, nextGroundX = newNextX,
+                     pipeCounter = newPipeCounter, nextPipeX = newNextPipeX}
                 case GamePhase.Menu =>
                     state
                 case GamePhase.GameOver =>
