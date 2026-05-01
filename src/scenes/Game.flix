@@ -44,6 +44,8 @@ pub enum NodeTag {
     case Ground
     /// パイプの StaticBody2D に付与
     case Pipe
+    /// パイプ間の採点用 Area2D に付与
+    case Coin
     /// タグ不要なノード（スプライト子ノード等）
     case NoTag
 }
@@ -97,6 +99,10 @@ instance AreaHandler[NodeTag] {
                 Game.onBirdHitPipe(pipePath = otherPath, scene)
             case (NodeTag.Pipe, NodeTag.BirdArea) =>
                 Game.onBirdHitPipe(pipePath = selfPath, scene)
+            case (NodeTag.BirdArea, NodeTag.Coin) =>
+                Game.onBirdPassedCoin(coinPath = otherPath, scene)
+            case (NodeTag.Coin, NodeTag.BirdArea) =>
+                Game.onBirdPassedCoin(coinPath = selfPath, scene)
             case _ => scene
         }
 }
@@ -240,6 +246,13 @@ mod Game {
             case _ => scene
         }
 
+    /// 鳥がコインを通過したときの処理
+    /// スコアを +1 し、コインの NodeTag を NoTag に変更して再採点を防止する
+    pub def onBirdPassedCoin(coinPath: {coinPath = NodePath}, scene: Scene[NodeTag]): Scene[NodeTag] =
+        scene
+            |> BirdScene.incrementScore
+            |> Scene.setState(coinPath#coinPath, NodeTag.NoTag)
+
     /// 鳥をパイプの左端に押し戻す
     def pushBirdOutOfPipe(pipeX: Float64, scene: Scene[NodeTag]): Scene[NodeTag] =
         let birdRadius = 13.0;
@@ -329,8 +342,15 @@ mod Game {
                     let sceneAfterFlap =
                         if (justPressed) BirdScene.flap(state#scene)
                         else state#scene;
+                    // スコア変化検知用に保存
+                    let prevScore = BirdScene.getBirdData(sceneAfterFlap)#score;
                     // エンジン更新（process → physics → collision → ...）
                     let updatedScene = engineUpdate(dt, sceneAfterFlap);
+                    // スコアが増えたら効果音を再生
+                    let newScore = BirdScene.getBirdData(updatedScene)#score;
+                    if (newScore > prevScore)
+                        GameEngine.Audio.playAudio("sfx_point")
+                    else ();
                     // 物理積分後に回転をクランプ
                     let sceneAfterClamp = BirdScene.clampRotation(updatedScene);
                     // カメラを鳥に追従させる

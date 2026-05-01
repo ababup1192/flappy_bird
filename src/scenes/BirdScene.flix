@@ -19,7 +19,8 @@ mod BirdScene {
     /// 鳥の状態データ（フレーム間で変化する純粋データ）
     /// state: 鳥の状態マシン
     /// speed: 横方向の移動速度（px/秒）
-    pub type alias BirdData = {state = BirdState, speed = Float64}
+    /// score: 通過パイプ数（スコア）
+    pub type alias BirdData = {state = BirdState, speed = Float64, score = Int32}
 
     // ========================================================================
     // 定数 — ノード名・パス
@@ -108,7 +109,7 @@ mod BirdScene {
             Vec2.zero(),
             {x = 2.0, y = 2.0});
         let area = Area2D.make(Vec2.zero(), birdCollisionShape());
-        let birdData: BirdData = {state = BirdState.Flapping, speed = birdSpeed()};
+        let birdData: BirdData = {state = BirdState.Flapping, speed = birdSpeed(), score = 0};
         scene
             |> Scene.addNode(name(),
                 EngineNode.RigidBody2DWithState(body, NodeTag.Bird(birdData)))
@@ -201,6 +202,11 @@ mod BirdScene {
                 EngineNode.RigidBody2DWithState(newBody, NodeTag.Bird(newData))
             case other => other
         }, scene)
+
+    /// スコアを 1 加算する
+    pub def incrementScore(scene: Scene[NodeTag]): Scene[NodeTag] =
+        scene |> mapBirdBody((body, birdData) ->
+            (body, {score = birdData#score + 1 | birdData}))
 
     /// Scene から BirdData を取り出す
     pub def getBirdData(scene: Scene[NodeTag]): BirdData =

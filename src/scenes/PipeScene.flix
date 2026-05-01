@@ -47,6 +47,10 @@ mod PipeScene {
     /// ボトムパイプのテクスチャ名
     def bottomTexture(): String = "pipe_green_bottom"
 
+    /// コインの衝突形状（ギャップ中央の薄い矩形）
+    def coinCollisionShape(): CollisionShape2D =
+        CollisionShape2D.RectShape2D({width = 4.0, height = 42.0})
+
     // ========================================================================
     // シーン構築
     // ========================================================================
@@ -67,6 +71,18 @@ mod PipeScene {
             |> Scene.addChild(name, "sprite",
                 EngineNode.Sprite2DWithState(sprite, NodeTag.NoTag))
 
+    /// コイン（採点用 Area2D）をギャップ中央に追加する
+    /// monitoring = false: コイン自身は重なりを検知しない（検知される側のみ）
+    def spawnCoin(counter: Int32, x: Float64, gapY: Float64,
+                  scene: Scene[NodeTag]): Scene[NodeTag] =
+        let coinName = "pipe_${counter}_coin";
+        let area = Area2D.make({x = x, y = gapY}, coinCollisionShape())
+            |> Area2D.setMonitoring(false);
+        scene
+            |> Scene.addNode(coinName,
+                EngineNode.Area2DWithState(area, NodeTag.Coin))
+            |> Scene.addToGroup(coinName :: Nil, pipeGroup())
+
     /// パイプペアを指定位置に決定的に追加する（テスト用公開）
     /// counter: ペア番号（ユニーク名生成用）
     /// x: ペアの X 座標
@@ -76,6 +92,7 @@ mod PipeScene {
         scene
             |> spawnPipe("pipe_${counter}_top", x, gapY - spriteOffset(), topTexture())
             |> spawnPipe("pipe_${counter}_bottom", x, gapY + spriteOffset(), bottomTexture())
+            |> spawnCoin(counter, x, gapY)
 
     /// パイプペアをランダムな gapY で追加する
     /// counter: ペア番号
@@ -116,8 +133,8 @@ mod PipeScene {
         let cleanedScene = List.foldLeft((accScene, path) ->
             Scene.removeAt(path, accScene)
         , scene, offScreenPaths);
-        // 削除数 / 2 = ペア数を再スポーン
-        let pairsToSpawn = List.length(offScreenPaths) / 2;
+        // 削除数 / 3 = ペア数を再スポーン（top + bottom + coin = 3 ノード/ペア）
+        let pairsToSpawn = List.length(offScreenPaths) / 3;
         List.range(0, pairsToSpawn)
             |> List.foldLeft((acc, _i) ->
                 let (accScene, counter, nextX) = acc;

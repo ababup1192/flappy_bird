@@ -57,15 +57,15 @@ def vecToTuple(v: Vec2.Vec2): (Float64, Float64) = (v#x, v#y)
 
 /// シーンには bird(+sprite+area) + camera + background(+bg_sprite)
 ///   + ground_0(+sprite) + ground_1(+sprite)
-///   + 3ペア × 2パイプ(+sprite) = 22 ノード
+///   + 3ペア × (2パイプ(+sprite) + coin) = 25 ノード
 @Test
 def testBuildSceneNodeCount(): Unit \ Assert =
-    Assert.assertEq(expected = 22, Scene.nodeCount(testScene()))
+    Assert.assertEq(expected = 25, Scene.nodeCount(testScene()))
 
-/// ルートノードは 11（bird, camera, background, ground_0, ground_1, pipe_0〜2 × top/bottom）
+/// ルートノードは 14（bird, camera, background, ground_0, ground_1, pipe_0〜2 × top/bottom/coin）
 @Test
 def testBuildSceneRootCount(): Unit \ Assert =
-    Assert.assertEq(expected = 11, Map.size(Scene.states(testScene())))
+    Assert.assertEq(expected = 14, Map.size(Scene.states(testScene())))
 
 /// 初期フェーズは Playing
 @Test
@@ -578,11 +578,11 @@ def testBackgroundHasSprite(): Unit \ Assert =
 // Phase 4: パイプの構造
 // ========================================================================
 
-/// パイプグループに 6 ノード（3 ペア × 上下）があること
+/// パイプグループに 9 ノード（3 ペア × (上下 + coin)）があること
 @Test
 def testPipeGroupCount(): Unit \ Assert =
     let paths = Scene.getNodesInGroup(PipeScene.pipeGroup(), testScene());
-    Assert.assertEq(expected = 6, List.length(paths))
+    Assert.assertEq(expected = 9, List.length(paths))
 
 /// パイプノードが StaticBody2D であること
 @Test
@@ -726,7 +726,7 @@ def testBirdPipeCollisionGroundedNoChange(): Unit \ Assert =
 def testRecyclePipesNoOp(): Unit \ Assert =
     let (recycledScene, counter, _nextX) = withMockRandom(() ->
         PipeScene.recyclePipes(0.0, 3, 978.0, testScene()));
-    Assert.assertEq(expected = (3, 6),
+    Assert.assertEq(expected = (3, 9),
         (counter, List.length(Scene.getNodesInGroup(PipeScene.pipeGroup(), recycledScene))))
 
 /// ビューポート左端を超えたパイプペアがリサイクルされること
@@ -740,7 +740,7 @@ def testRecyclePipesRemovesOffScreen(): Unit \ Assert =
     let (recycledScene, counter, nextX) = withMockRandom(() ->
         PipeScene.recyclePipes(500.0, 3, 978.0, testScene()));
     let paths = Scene.getNodesInGroup(PipeScene.pipeGroup(), recycledScene);
-    Assert.assertEq(expected = (6, 4, 1160.0),
+    Assert.assertEq(expected = (9, 4, 1160.0),
         (List.length(paths), counter, nextX))
 
 /// リサイクル後の新パイプが正しい位置にあること
