@@ -318,10 +318,10 @@ mod Game {
     // ========================================================================
 
     /// カメラシェイクの強度（ピクセル）
-    def shakeIntensity(): Float64 = 4.0
+    def shakeIntensity(): Float64 = 3.0
 
     /// カメラシェイクの持続時間（秒）
-    def shakeDuration(): Float64 = 0.3
+    def shakeDuration(): Float64 = 0.18
 
     /// カメラシェイクをトリガーする
     def triggerCameraShake(intensity: Float64, duration: Float64, scene: Scene[NodeTag]): Scene[NodeTag] =
