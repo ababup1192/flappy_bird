@@ -64,7 +64,8 @@ def main(): Unit \ IO =
                 {name = "sfx_die", path = "audio/sfx_die.wav", looping = false} ::
                 {name = "sfx_swooshing", path = "audio/sfx_swooshing.wav", looping = false} ::
                 Nil,
-            clearColor = {r = 0.392f32, g = 0.584f32, b = 0.929f32}
+            clearColor = {r = 0.392f32, g = 0.584f32, b = 0.929f32},
+            maxDeltaTime = 0.05
         };
        
         run {

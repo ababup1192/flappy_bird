@@ -25,6 +25,9 @@ mod GameEngine {
     pub type alias TextureRegistry = Map[String, TextureInfo]
 
     /// エンジン初期化に必要な設定
+    /// maxDeltaTime: getDeltaTime が返す値の上限（秒）。初回フレームのウィンドウ初期化遅延や
+    ///               フォーカス復帰時の巨大 dt による物理破綻（tunneling 等）を防ぐ。
+    ///               クランプ無効化したい場合は Float64.maxValue() を渡す。
     pub type alias EngineConfig = {
         screenWidth = Int32,
         screenHeight = Int32,
@@ -32,7 +35,8 @@ mod GameEngine {
         textureManifest = List[TextureEntry],
         fontManifest = List[FontEntry],
         soundManifest = List[AudioEntry],
-        clearColor = Color
+        clearColor = Color,
+        maxDeltaTime = Float64
     }
 
     /// 描画用データ: render ハンドラに渡す
@@ -93,6 +97,7 @@ mod GameEngine {
     pub eff Game {
         def render(drawables: List[Drawable]): Unit
         def shouldClose(): Bool
+        /// 前フレームからの経過時間（秒）。EngineConfig#maxDeltaTime で上限クランプ済み
         def getDeltaTime(): Float64
         def isKeyPressed(key: Key): Bool
         def getMousePosition(): Vec2.Vec2

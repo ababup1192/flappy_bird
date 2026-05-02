@@ -411,16 +411,6 @@ mod Game {
             |> Scene.setState(coinPath#coinPath, NodeTag.NoTag)
 
     // ========================================================================
-    // デルタタイム
-    // ========================================================================
-
-    /// デルタタイムの上限（秒）。初回フレームのウィンドウ初期化遅延を吸収する
-    def maxDeltaTime(): Float64 = 0.05
-
-    /// デルタタイムを上限でクランプする
-    def clampDeltaTime(dt: Float64): Float64 = Float64.min(dt, maxDeltaTime())
-
-    // ========================================================================
     // エンジン更新パイプライン
     // ========================================================================
 
@@ -507,7 +497,7 @@ mod Game {
         if (GameEngine.Game.shouldClose() or
             GameEngine.Game.isKeyPressed(GameEngine.Key.Escape)) ()
         else {
-            let dt = clampDeltaTime(GameEngine.Game.getDeltaTime());
+            let dt = GameEngine.Game.getDeltaTime();
             let updatedScene = state#scene |> engineUpdate(dt);
             let nextState = applyPendingPhase(fontAtlas, state, updatedScene, pending);
             GameEngine.render(nextState#scene);
