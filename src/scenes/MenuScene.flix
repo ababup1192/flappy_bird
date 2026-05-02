@@ -73,5 +73,5 @@ mod MenuScene {
             |> Scene.addChild(layerName(), instructionsName(),
                 EngineNode.Sprite2DWithState(instructions, NodeTag.NoTag))
             |> Scene.addChild(layerName(), playButtonName(),
-                EngineNode.TextureButtonWithState(playButton, NodeTag.PlayButton))
+                EngineNode.TextureButtonWithState(playButton, NodeTag.NoTag))
 }

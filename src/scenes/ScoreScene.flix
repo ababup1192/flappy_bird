@@ -58,7 +58,7 @@ mod ScoreScene {
                 EngineNode.Label2DWithState(bestLabel, NodeTag.BestScoreLabel(bestScore)))
 
     // ========================================================================
-    // スコア取得・更新
+    // 取得
     // ========================================================================
 
     /// Scene から現在のスコアを取り出す
@@ -75,15 +75,20 @@ mod ScoreScene {
             case _ => bug!("best_score_label not found")
         }
 
+    // ========================================================================
+    // 更新
+    // ========================================================================
+
     /// スコアを指定値に更新する（NodeTag とラベルテキストの両方）
     pub def setScore(score: Score, scene: Scene[NodeTag]): Scene[NodeTag] =
-        Scene.mapEngineNode(scoreLabelPath(), engineNode -> match engineNode {
-            case EngineNode.Label2DWithState(label, NodeTag.ScoreLabel(_)) =>
-                EngineNode.Label2DWithState(
-                    Label2D.setText("${score}", label),
-                    NodeTag.ScoreLabel(score))
-            case other => other
-        }, scene)
+        scene
+            |> Scene.setState(scoreLabelPath(), NodeTag.ScoreLabel(score))
+            |> Scene.mapEngineNode(scoreLabelPath(),
+                EngineNode.mapLabel2D(l -> Label2D.setText("${score}", l)))
+
+    /// ベストスコアを更新する（ラベルは非表示なのでテキストは更新しない）
+    pub def setBestScore(bestScore: BestScore, scene: Scene[NodeTag]): Scene[NodeTag] =
+        Scene.setState(bestScoreLabelPath(), NodeTag.BestScoreLabel(bestScore), scene)
 
     /// 現在のスコアを関数 f で変換する
     pub def mapScore(f: Score -> Score, scene: Scene[NodeTag]): Scene[NodeTag] =
@@ -96,6 +101,10 @@ mod ScoreScene {
     /// スコアを 1 加算し、ラベルテキストも同時に更新する
     pub def incrementScore(scene: Scene[NodeTag]): Scene[NodeTag] =
         mapScore(s -> s + 1, scene)
+
+    // ========================================================================
+    // 応答処理
+    // ========================================================================
 
     /// HUD のスコアラベルを非表示にする（Menu / GameOver 遷移時に使用）
     pub def hideScoreLabel(scene: Scene[NodeTag]): Scene[NodeTag] =
@@ -114,12 +123,4 @@ mod ScoreScene {
         scene
             |> incrementScore
             |> Scene.setState(coinPath#coinPath, NodeTag.NoTag)
-
-    /// ベストスコアを更新する
-    pub def setBestScore(bestScore: BestScore, scene: Scene[NodeTag]): Scene[NodeTag] =
-        Scene.mapEngineNode(bestScoreLabelPath(), engineNode -> match engineNode {
-            case EngineNode.Label2DWithState(label, NodeTag.BestScoreLabel(_)) =>
-                EngineNode.Label2DWithState(label, NodeTag.BestScoreLabel(bestScore))
-            case other => other
-        }, scene)
 }

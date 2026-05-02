@@ -170,7 +170,7 @@ mod GameOverScene {
             |> Scene.addChild(layerName(), bestScoreName(),
                 EngineNode.Label2DWithState(bestLabel, NodeTag.NoTag))
             |> Scene.addChild(layerName(), playButtonName(),
-                EngineNode.TextureButtonWithState(playButton, NodeTag.PlayButton));
+                EngineNode.TextureButtonWithState(playButton, NodeTag.NoTag));
         // メダルを追加（bestScore >= 10 の場合のみ、非表示で追加）
         // bestScore を使うことで、一度取得したメダルは以降も表示され続け、
         // ベストスコア更新時に新しいメダルに差し替わる

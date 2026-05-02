@@ -55,9 +55,8 @@ pub enum NodeTag {
     case Camera(CameraScene.CameraData)
     /// ゲームオーバーアニメーション状態を保持する
     case GameOverAnim(GameOverAnimData)
-    /// Play ボタンノードに付与。ButtonHandler が path で識別して StageRequested を発火する
-    case PlayButton
-    /// タグ不要なノード（スプライト子ノード等）
+    /// タグ不要なノード（スプライト子ノード、ボタン等）
+    /// ボタンの識別は ButtonHandler 側で path 比較によって行う
     case NoTag
 }
 
