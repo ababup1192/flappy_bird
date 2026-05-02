@@ -46,40 +46,24 @@ mod GameOverScene {
     /// ゲームオーバーレイヤーのパス
     def layerPath(): NodePath = layerName() :: Nil
 
-    // ========================================================================
-    // 定数 — 位置（2x スケール、画面幅 288 の中央 x=144）
-    // ========================================================================
-
-    /// GAME OVER ラベルの位置
-    def gameOverLabelPos(): Vec2.Vec2 = {x = 144.0, y = 160.0}
-
-    /// スコアパネルの位置
-    def scorePanelPos(): Vec2.Vec2 = {x = 144.0, y = 280.0}
-
-    /// メダルの位置（パネル左側、パネル中心より少し下）
-    def medalPos(): Vec2.Vec2 = {x = 81.0, y = 287.0}
-
-    /// 最終スコアの位置（パネル右上、"SCORE" テキストと同じ行）
-    def finalScorePos(): Vec2.Vec2 = {x = 220.0, y = 253.0}
-
-    /// ベストスコアの位置（パネル右下、"BEST" テキストと同じ行）
-    def bestScorePos(): Vec2.Vec2 = {x = 218.0, y = 295.0}
-
-    /// Play ボタンの位置（中心座標）
-    def playButtonPos(): Vec2.Vec2 = {x = 144.0, y = 390.0}
-
-    /// Play ボタンサイズ（button_play_normal 52x29 px × 2x スケール = 104x58）
-    def playButtonSize(): Vec2.Vec2 = {x = 104.0, y = 58.0}
-
     /// Play ボタンのパス
     pub def playButtonPath(): NodePath = layerName() :: playButtonName() :: Nil
 
+    /// メダルのパス
+    def medalPath(): NodePath = layerName() :: medalName() :: Nil
+
+    /// 最終スコアラベルのパス
+    def finalScorePath(): NodePath = layerName() :: finalScoreName() :: Nil
+
+    /// ベストスコアラベルのパス
+    def bestScorePath(): NodePath = layerName() :: bestScoreName() :: Nil
+
     // ========================================================================
-    // 2x スケール
+    // シーン定義 JSON のパス
     // ========================================================================
 
-    /// 共通の 2x スケール
-    def scale2x(): Vec2.Vec2 = {x = 2.0, y = 2.0}
+    /// ゲームオーバー UI のシーン定義 JSON ファイルのパス
+    def sceneJsonPath(): String = "src/scenes/GameOverScene.scene.json"
 
     // ========================================================================
     // アニメーション定数
@@ -119,70 +103,44 @@ mod GameOverScene {
 
     /// ゲームオーバー画面への遷移処理
     /// 効果音再生 → スコア確定 → UI 追加をまとめる
-    pub def enterGameOver(fontAtlas: FontAtlas, scene: Scene[NodeTag]): Scene[NodeTag] \ GameEngine.Audio =
+    pub def enterGameOver(fontAtlas: FontAtlas,
+                          scene: Scene[NodeTag]): Scene[NodeTag] \ {GameEngine.Audio, Fs.FileRead} =
         GameEngine.Audio.playAudio("sfx_swooshing");
         scene
             |> ScoreScene.finalizeScore
             |> addGameOverUI(fontAtlas)
 
-    /// ゲームオーバー UI をシーンに追加する
-    /// score / bestScore は scene の ScoreLabel / BestScoreLabel から読み出す
-    /// CanvasLayer (layer=2) に GAME OVER ラベル、スコアパネル、メダル、スコア/ベストスコア数値、Play ボタンを配置する
-    /// 全子ノードは初期非表示で追加され、アニメーションで段階的に表示される
-    /// HUD のスコアラベルを非表示にする
-    pub def addGameOverUI(fontAtlas: FontAtlas, scene: Scene[NodeTag]): Scene[NodeTag] =
+    /// ゲームオーバー UI をシーンに追加する。
+    /// 構造は GameOverScene.scene.json から読み込み（全 6 子ノードは初期非表示）、
+    /// 読み込み後に GameOverAnim タグ・スコアテキスト・メダル差し替えを適用する。
+    /// メダルはベストスコア < 10 のときに削除する（メダルなし表示）。
+    /// HUD のスコアラベルも非表示にする
+    pub def addGameOverUI(fontAtlas: FontAtlas,
+                          scene: Scene[NodeTag]): Scene[NodeTag] \ Fs.FileRead =
         let score = ScoreScene.getScore(scene);
         let bestScore = ScoreScene.getBestScore(scene);
-        let layer = CanvasLayer.make(2);
-        let gameOverLabel = Sprite2D.make("label_game_over", gameOverLabelPos(), scale2x())
-            |> CanvasItem.hide;
-        let panel = Sprite2D.make("panel_score", scorePanelPos(), scale2x())
-            |> CanvasItem.hide;
-        let scoreLabel = Label2D.make("${score}", fontAtlas, 30.0)
-            |> Label2D.setCentered(true)
-            |> Node2D.setPosition(finalScorePos())
-            |> CanvasItem.setZIndex(1)
-            |> CanvasItem.hide;
-        let bestLabel = Label2D.make("${bestScore}", fontAtlas, 30.0)
-            |> Label2D.setCentered(true)
-            |> Node2D.setPosition(bestScorePos())
-            |> CanvasItem.setZIndex(1)
-            |> CanvasItem.hide;
-        let playButton = TextureButton.make("button_play_normal", playButtonSize())
-            |> TextureButton.setTexturePressed("button_play_pressed")
-            |> TextureButton.setCentered(true)
-            |> Node2D.setPosition(playButtonPos())
-            |> Node2D.setScale(scale2x())
-            |> CanvasItem.hide;
-        let sceneWithLayer = scene
-            // HUD のスコアラベルを非表示にする
+        scene
             |> ScoreScene.hideScoreLabel
-            // ゲームオーバーレイヤーを追加（GameOverAnim state でアニメーション経過時間を管理）
-            |> Scene.addNode(layerName(),
-                EngineNode.CanvasLayerWithState(layer,
-                    NodeTag.GameOverAnim({elapsed = 0.0})))
-            |> Scene.addChild(layerName(), labelName(),
-                EngineNode.Sprite2DWithState(gameOverLabel, NodeTag.NoTag))
-            |> Scene.addChild(layerName(), panelName(),
-                EngineNode.Sprite2DWithState(panel, NodeTag.NoTag))
-            |> Scene.addChild(layerName(), finalScoreName(),
-                EngineNode.Label2DWithState(scoreLabel, NodeTag.NoTag))
-            |> Scene.addChild(layerName(), bestScoreName(),
-                EngineNode.Label2DWithState(bestLabel, NodeTag.NoTag))
-            |> Scene.addChild(layerName(), playButtonName(),
-                EngineNode.TextureButtonWithState(playButton, NodeTag.NoTag));
-        // メダルを追加（bestScore >= 10 の場合のみ、非表示で追加）
-        // bestScore を使うことで、一度取得したメダルは以降も表示され続け、
-        // ベストスコア更新時に新しいメダルに差し替わる
+            |> SceneLoader.loadSceneWithFont(sceneJsonPath(), fontAtlas)
+            // GameOverAnim 状態をルートレイヤーにセット
+            |> Scene.setState(layerPath(), NodeTag.GameOverAnim({elapsed = 0.0}))
+            // 最終スコア・ベストスコアのテキストを実際の値に差し替え
+            |> Scene.mapEngineNode(finalScorePath(),
+                EngineNode.mapLabel2D(Label2D.setText("${score}")))
+            |> Scene.mapEngineNode(bestScorePath(),
+                EngineNode.mapLabel2D(Label2D.setText("${bestScore}")))
+            // メダルテクスチャを bestScore に応じて差し替え（< 10 のときは削除）
+            |> applyMedal(bestScore)
+
+    /// bestScore に応じてメダルテクスチャを差し替える、
+    /// あるいは bestScore < 10 のときはメダルノードを削除する
+    def applyMedal(bestScore: BestScore, scene: Scene[NodeTag]): Scene[NodeTag] =
         match getMedalTexture(bestScore) {
             case Some(medalTex) =>
-                let medalSprite = Sprite2D.make(medalTex, medalPos(), scale2x())
-                    |> CanvasItem.setZIndex(1)
-                    |> CanvasItem.hide;
-                sceneWithLayer
-                    |> Scene.addChild(layerName(), medalName(),
-                        EngineNode.Sprite2DWithState(medalSprite, NodeTag.NoTag))
-            case None => sceneWithLayer
+                Scene.mapEngineNode(medalPath(),
+                    EngineNode.mapSprite2D(Sprite2D.setTexture(medalTex)), scene)
+            case None =>
+                Scene.removeAt(medalPath(), scene)
         }
 
     // ========================================================================

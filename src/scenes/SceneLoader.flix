@@ -228,23 +228,25 @@ mod SceneLoader {
 
     /// Sprite2D ノードを構築する。
     /// 必須: "texture" / "pos" / "scale"
-    /// 任意: "zIndex"（描画順）
+    /// 任意: "zIndex"（描画順） / "visible"（表示フラグ）
     def buildSprite2D(map: Map[String, Json.JsonElement]): Result[Json.JsonError, EngineNode[NodeTag]] =
         forM (
-            tag       <- parseTag(map);
-            pos       <- parseVec2("pos", map);
-            scale     <- parseVec2("scale", map);
-            texture   <- (Json.getAtKey(Root, "texture", map): Result[Json.JsonError, String]);
-            zIndexOpt <- (Json.getAtKeyOpt(Root, "zIndex", map): Result[Json.JsonError, Option[Int32]])
+            tag        <- parseTag(map);
+            pos        <- parseVec2("pos", map);
+            scale      <- parseVec2("scale", map);
+            texture    <- (Json.getAtKey(Root, "texture", map): Result[Json.JsonError, String]);
+            zIndexOpt  <- (Json.getAtKeyOpt(Root, "zIndex", map): Result[Json.JsonError, Option[Int32]]);
+            visibleOpt <- (Json.getAtKeyOpt(Root, "visible", map): Result[Json.JsonError, Option[Bool]])
         ) yield {
             let sprite = Sprite2D.make(texture, pos, scale)
-                |> applyZIndex(zIndexOpt);
+                |> applyZIndex(zIndexOpt)
+                |> applyVisible(visibleOpt);
             EngineNode.Sprite2DWithState(sprite, tag)
         }
 
     /// TextureButton ノードを構築する。
     /// 必須: "textureNormal" / "pos" / "scale" / "size"
-    /// 任意: "texturePressed" / "centered"
+    /// 任意: "texturePressed" / "centered" / "visible"
     def buildTextureButton(map: Map[String, Json.JsonElement]): Result[Json.JsonError, EngineNode[NodeTag]] =
         forM (
             tag               <- parseTag(map);
@@ -253,13 +255,15 @@ mod SceneLoader {
             size              <- parseVec2("size", map);
             textureNormal     <- (Json.getAtKey(Root, "textureNormal", map): Result[Json.JsonError, String]);
             texturePressedOpt <- (Json.getAtKeyOpt(Root, "texturePressed", map): Result[Json.JsonError, Option[String]]);
-            centeredOpt       <- (Json.getAtKeyOpt(Root, "centered", map): Result[Json.JsonError, Option[Bool]])
+            centeredOpt       <- (Json.getAtKeyOpt(Root, "centered", map): Result[Json.JsonError, Option[Bool]]);
+            visibleOpt        <- (Json.getAtKeyOpt(Root, "visible", map): Result[Json.JsonError, Option[Bool]])
         ) yield {
             let button = TextureButton.make(textureNormal, size)
                 |> Node2D.setPosition(pos)
                 |> Node2D.setScale(scale)
                 |> applyTexturePressed(texturePressedOpt)
-                |> applyCentered(centeredOpt);
+                |> applyCentered(centeredOpt)
+                |> applyButtonVisible(visibleOpt);
             EngineNode.TextureButtonWithState(button, tag)
         }
 
@@ -274,7 +278,7 @@ mod SceneLoader {
 
     /// Label2D ノードを構築する。
     /// 必須: "text" / "pos" / "fontSize"
-    /// 任意: "centered" / "visible"
+    /// 任意: "centered" / "visible" / "zIndex"
     /// fontAtlas が None の場合は Err を返す（Label2D は font が必須なため）
     def buildLabel2D(fontAtlas: Option[FontAtlas],
                      map: Map[String, Json.JsonElement]): Result[Json.JsonError, EngineNode[NodeTag]] =
@@ -287,12 +291,14 @@ mod SceneLoader {
                     pos         <- parseVec2("pos", map);
                     fontSize    <- (Json.getAtKey(Root, "fontSize", map): Result[Json.JsonError, Float64]);
                     centeredOpt <- (Json.getAtKeyOpt(Root, "centered", map): Result[Json.JsonError, Option[Bool]]);
-                    visibleOpt  <- (Json.getAtKeyOpt(Root, "visible", map): Result[Json.JsonError, Option[Bool]])
+                    visibleOpt  <- (Json.getAtKeyOpt(Root, "visible", map): Result[Json.JsonError, Option[Bool]]);
+                    zIndexOpt   <- (Json.getAtKeyOpt(Root, "zIndex", map): Result[Json.JsonError, Option[Int32]])
                 ) yield {
                     let label = Label2D.make(text, font, fontSize)
                         |> Node2D.setPosition(pos)
                         |> applyLabelCentered(centeredOpt)
-                        |> applyLabelVisible(visibleOpt);
+                        |> applyLabelVisible(visibleOpt)
+                        |> applyLabelZIndex(zIndexOpt);
                     EngineNode.Label2DWithState(label, tag)
                 }
         }
@@ -306,6 +312,13 @@ mod SceneLoader {
         match opt {
             case Some(zIndex) => CanvasItem.setZIndex(zIndex, sprite)
             case None         => sprite
+        }
+
+    /// 任意の visible を Sprite2D に適用する（None ならそのまま返す）
+    def applyVisible(opt: Option[Bool], sprite: Sprite2D): Sprite2D =
+        match opt {
+            case Some(visible) => CanvasItem.setVisible(visible, sprite)
+            case None          => sprite
         }
 
     /// 任意の texturePressed を TextureButton に適用する（None ならそのまま返す）
@@ -322,6 +335,13 @@ mod SceneLoader {
             case None           => button
         }
 
+    /// 任意の visible を TextureButton に適用する（None ならそのまま返す）
+    def applyButtonVisible(opt: Option[Bool], button: TextureButton): TextureButton =
+        match opt {
+            case Some(visible) => CanvasItem.setVisible(visible, button)
+            case None          => button
+        }
+
     /// 任意の centered を Label2D に適用する（None ならそのまま返す）
     def applyLabelCentered(opt: Option[Bool], label: Label2D): Label2D =
         match opt {
@@ -334,5 +354,12 @@ mod SceneLoader {
         match opt {
             case Some(visible) => CanvasItem.setVisible(visible, label)
             case None          => label
+        }
+
+    /// 任意の zIndex を Label2D に適用する（None ならそのまま返す）
+    def applyLabelZIndex(opt: Option[Int32], label: Label2D): Label2D =
+        match opt {
+            case Some(zIndex) => CanvasItem.setZIndex(zIndex, label)
+            case None         => label
         }
 }
