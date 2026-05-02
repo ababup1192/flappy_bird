@@ -10,7 +10,7 @@
 //     ├── Sprite2DWithState(medal, NoTag)                       // メダル（score>=10 のみ）
 //     ├── Label2DWithState(final_score, NoTag)                  // パネル上のスコア数値
 //     ├── Label2DWithState(best_score, NoTag)                   // パネル上のベストスコア数値
-//     └── TextureButtonWithState(play_button, PlayButton(...))   // Play ボタン
+//     └── TextureButtonWithState(play_button, PlayButton)        // Play ボタン
 
 mod GameOverScene {
 
@@ -163,7 +163,7 @@ mod GameOverScene {
             |> Scene.addChild(layerName(), bestScoreName(),
                 EngineNode.Label2DWithState(bestLabel, NodeTag.NoTag))
             |> Scene.addChild(layerName(), playButtonName(),
-                EngineNode.TextureButtonWithState(playButton, NodeTag.PlayButton({pressed = false})));
+                EngineNode.TextureButtonWithState(playButton, NodeTag.PlayButton));
         // メダルを追加（bestScore >= 10 の場合のみ、非表示で追加）
         // bestScore を使うことで、一度取得したメダルは以降も表示され続け、
         // ベストスコア更新時に新しいメダルに差し替わる
@@ -227,19 +227,4 @@ mod GameOverScene {
             case None => scene
         }
 
-    // ========================================================================
-    // Play ボタン押下管理（ButtonHandler が NodeTag.PlayButton.pressed=true をセット）
-    // ========================================================================
-
-    pub def isPlayButtonPressed(scene: Scene[NodeTag]): Bool =
-        MenuScene.getPlayButtonData(playButtonPath(), scene)#pressed
-
-    pub def clearPlayButton(scene: Scene[NodeTag]): Scene[NodeTag] =
-        MenuScene.mapPlayButton(playButtonPath(), (btn, _) -> (btn, {pressed = false}), scene)
-
-    /// Play ボタンの押下フラグを取得し、同時にクリアする
-    /// (押下されていた場合は true, クリア後 Scene を返す)
-    pub def consumePlayButtonPressed(scene: Scene[NodeTag]): (Bool, Scene[NodeTag]) =
-        let pressed = isPlayButtonPressed(scene);
-        if (pressed) (true, clearPlayButton(scene)) else (false, scene)
 }

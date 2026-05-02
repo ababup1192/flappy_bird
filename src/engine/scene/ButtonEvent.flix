@@ -9,12 +9,18 @@
 pub mod ButtonEvent {
 
     /// ボタンプレスに応答するトレイト
+    /// 関連エフェクト Aef により、インスタンスごとに必要なエフェクトを宣言できる。
     pub trait ButtonHandler[s] {
+
+        /// ボタン応答で発生するエフェクト
+        type Aef: Eff
+
         /// ボタンが押されたとき呼ばれる。
         /// buttonPath: ボタンノードのパス
         /// state: ボタンノードのゲーム状態
         /// scene: 現在のシーン
-        pub def onButtonPressed(_buttonPath: NodePath, _state: s, scene: Scene[s]): Scene[s] = scene
+        pub def onButtonPressed(_buttonPath: NodePath, _state: s, scene: Scene[s]): Scene[s] \ ButtonHandler.Aef[s] =
+            checked_ecast(scene)
     }
 
     /// マウス状態を全 ButtonWithState / TextureButtonWithState に反映する
@@ -75,7 +81,7 @@ pub mod ButtonEvent {
     /// 2. detectPressedPaths で justPressed を収集
     /// 3. onButtonPressed を呼び出し
     /// 4. clearJustPressed でフラグをリセット
-    pub def handleButtons(scene: Scene[s]): Scene[s] \ GameEngine.Game
+    pub def handleButtons(scene: Scene[s]): Scene[s] \ {GameEngine.Game, ButtonHandler.Aef[s]}
             with ButtonHandler[s] =
         let sceneAfterUpdate = updateButtons(scene);
         let pressedPaths = detectPressedPaths(sceneAfterUpdate);

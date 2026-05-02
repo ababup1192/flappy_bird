@@ -5,7 +5,7 @@
 //   CanvasLayerWithState(menu, NoTag)  [layer=2]
 //     ├── Sprite2DWithState(title_logo, NoTag)                  // label_flappy_bird (y=140)
 //     ├── Sprite2DWithState(instructions_img, NoTag)            // instructions (y=340)
-//     └── TextureButtonWithState(play_button, PlayButton(...))  // button_play_normal (y=440)
+//     └── TextureButtonWithState(play_button, PlayButton)        // button_play_normal (y=440)
 
 mod MenuScene {
 
@@ -71,50 +71,9 @@ mod MenuScene {
             |> Scene.addChild(layerName(), instructionsName(),
                 EngineNode.Sprite2DWithState(instructions, NodeTag.NoTag))
             |> Scene.addChild(layerName(), playButtonName(),
-                EngineNode.TextureButtonWithState(playButton, NodeTag.PlayButton({pressed = false})))
+                EngineNode.TextureButtonWithState(playButton, NodeTag.PlayButton))
 
     /// メニュー UI をシーンから削除する
     pub def removeMenuUI(scene: Scene[NodeTag]): Scene[NodeTag] =
         Scene.removeAt(layerName() :: Nil, scene)
-
-    // ========================================================================
-    // Play ボタン汎用ヘルパー（GameOverScene からも使う）
-    // BirdScene.mapBirdBody / getBirdData と同形。NodeTag.PlayButton を持つ
-    // 任意の TextureButton ノードに対して動作する
-    // ========================================================================
-
-    /// PlayButton ノードの TextureButton と PlayButtonData を変換する
-    pub def mapPlayButton(path: NodePath,
-                          f: (TextureButton, PlayButtonData) -> (TextureButton, PlayButtonData),
-                          scene: Scene[NodeTag]): Scene[NodeTag] =
-        Scene.mapEngineNode(path, engineNode -> match engineNode {
-            case EngineNode.TextureButtonWithState(btn, NodeTag.PlayButton(data)) =>
-                let (newBtn, newData) = f(btn, data);
-                EngineNode.TextureButtonWithState(newBtn, NodeTag.PlayButton(newData))
-            case other => other
-        }, scene)
-
-    /// Scene から PlayButtonData を取り出す
-    /// PlayButton ノードが存在しないシーンでは未押下扱いを返す
-    pub def getPlayButtonData(path: NodePath, scene: Scene[NodeTag]): PlayButtonData =
-        match Scene.getState(path, scene) {
-            case Some(NodeTag.PlayButton(data)) => data
-            case _ => {pressed = false}
-        }
-
-    // ========================================================================
-    // メニューの Play ボタン押下管理（ButtonHandler が NodeTag.PlayButton.pressed=true をセット）
-    // ========================================================================
-
-    pub def isPlayButtonPressed(scene: Scene[NodeTag]): Bool =
-        getPlayButtonData(playButtonPath(), scene)#pressed
-
-    pub def clearPlayButton(scene: Scene[NodeTag]): Scene[NodeTag] =
-        mapPlayButton(playButtonPath(), (btn, _) -> (btn, {pressed = false}), scene)
-
-    /// Play ボタンの押下フラグを取得し、同時にクリアする
-    /// (押下されていた場合は true, クリア後 Scene を返す)
-    pub def consumePlayButtonPressed(scene: Scene[NodeTag]): (Bool, Scene[NodeTag]) =
-        let pressed = isPlayButtonPressed(scene);
-        if (pressed) (true, clearPlayButton(scene)) else (false, scene)
 }

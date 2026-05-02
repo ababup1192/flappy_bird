@@ -14,6 +14,12 @@ pub enum GamePhase with Eq, ToString {
     case GameOver
 }
 
+/// ステージ遷移要求イベント（godot stage_manager.change_stage 相当）
+/// ButtonHandler / BirdStateChanged から発火し、gameLoop が次フレームで処理する
+pub eff StageRequested {
+    def emit(target: GamePhase): Unit
+}
+
 // ========================================================================
 // レベル管理データ
 // ========================================================================
@@ -46,9 +52,6 @@ pub type alias ShakeData = {shakeRemaining = Float64, shakeIntensity = Float64}
 /// ゲームオーバーアニメーションの経過時間
 pub type alias GameOverAnimData = {elapsed = Float64}
 
-/// Play ボタンの押下フラグ（mouse click イベントで true がセットされ、gameLoop がフレーム冒頭でクリア）
-pub type alias PlayButtonData = {pressed = Bool}
-
 /// 各ノードに付与する識別タグ（Scene[NodeTag] の型パラメータ）
 pub enum NodeTag {
     /// 鳥の RigidBody2D に付与。BirdData を保持する
@@ -71,8 +74,8 @@ pub enum NodeTag {
     case CameraShake(ShakeData)
     /// ゲームオーバーアニメーション状態を保持する
     case GameOverAnim(GameOverAnimData)
-    /// Play ボタンノードに付与。メニュー / GameOver の遷移トリガとして押下フラグを保持する
-    case PlayButton(PlayButtonData)
+    /// Play ボタンノードに付与。ButtonHandler が path で識別して StageRequested を発火する
+    case PlayButton
     /// タグ不要なノード（スプライト子ノード等）
     case NoTag
 }
@@ -172,17 +175,20 @@ instance InputEvent.InputHandler[NodeTag] {
 
 // ========================================================================
 // ButtonHandler 実装（Godot TextureButton.pressed シグナル相当）
-// PlayButton ノードの pressed=true をセット。gameLoop が次フレームに読み出す
+// godot btn_play.gd と同じく、押下時に直接 stage_manager.change_stage(...) 相当の
+// StageRequested.emit(...) を発火する
 // ========================================================================
 
 instance ButtonEvent.ButtonHandler[NodeTag] {
-    redef onButtonPressed(buttonPath: NodePath, state: NodeTag,
-                          scene: Scene[NodeTag]): Scene[NodeTag] =
-        match state {
-            case NodeTag.PlayButton(_) =>
-                MenuScene.mapPlayButton(buttonPath, (btn, _) -> (btn, {pressed = true}), scene)
-            case _ => scene
-        }
+    type Aef = { StageRequested }
+    redef onButtonPressed(buttonPath: NodePath, _state: NodeTag,
+                          scene: Scene[NodeTag]): Scene[NodeTag] \ StageRequested =
+        if (buttonPath == MenuScene.playButtonPath()) {
+            StageRequested.emit(GamePhase.Playing); scene
+        } else if (buttonPath == GameOverScene.playButtonPath()
+                   and GameOverScene.isAnimationFinished(scene)) {
+            StageRequested.emit(GamePhase.Menu); scene
+        } else scene
 }
 
 // ========================================================================
@@ -429,7 +435,7 @@ mod Game {
     // ========================================================================
 
     /// エンジン更新パイプライン（input → buttons → process → physics → collision → screen → timers）
-    def engineUpdate(dt: Float64, scene: Scene[NodeTag]): Scene[NodeTag] \ {GameEngine.Audio, GameEngine.Game, Math.Random, BirdStateChanged} =
+    def engineUpdate(dt: Float64, scene: Scene[NodeTag]): Scene[NodeTag] \ {GameEngine.Audio, GameEngine.Game, Math.Random, BirdStateChanged, StageRequested} =
         (GameEngine.emitInput
         >> GameEngine.emitButtons
         >> GameEngine.process(dt, false)
@@ -466,60 +472,70 @@ mod Game {
     // ========================================================================
 
     /// ゲームのエントリポイント
-    /// BirdStateChanged ハンドラに以下を集約する（bird.gd の `state_changed` シグナル相当）:
-    ///   - Hit / Grounded: カメラシェイク
-    ///   - Grounded: sfx_swooshing 再生 + ベストスコア確定 + GameOver UI 構築
-    pub def start(fontAtlas: FontAtlas): Unit \ {GameEngine.Game, GameEngine.Audio, Math.Random} =
-        run {
-            gameLoop(fontAtlas, buildMenuState(fontAtlas, 0))
-        } with handler BirdStateChanged {
-            def emit(newState, scene, k) = {
-                let nextScene = match newState {
-                    case BirdState.Hit =>
-                        triggerCameraShake(shakeIntensity(), shakeDuration(), scene)
-                    case BirdState.Grounded =>
-                        GameEngine.Audio.playAudio("sfx_swooshing");
-                        scene
-                            |> triggerCameraShake(shakeIntensity(), shakeDuration())
-                            |> ScoreScene.finalizeScore
-                            |> GameOverScene.addGameOverUI(fontAtlas)
-                    case _ => scene
-                };
-                k(nextScene)
+    /// godot の bird.state_changed + stage_manager.change_stage シグナルに対応:
+    ///   - BirdStateChanged: Hit/Grounded でカメラシェイク、Grounded で GameOver 遷移発火
+    ///   - StageRequested:   ButtonHandler / BirdStateChanged からの遷移要求を Ref に蓄積
+    pub def start(fontAtlas: FontAtlas): Unit \ {GameEngine.Game, GameEngine.Audio, Math.Random, IO} =
+        region rc {
+            let pending: Ref[Option[GamePhase], rc] = Ref.fresh(rc, None);
+            run {
+                gameLoop(fontAtlas, buildMenuState(fontAtlas, 0), pending)
+            } with handler BirdStateChanged {
+                def emit(newState, scene, k) = {
+                    let nextScene = match newState {
+                        case BirdState.Hit =>
+                            triggerCameraShake(shakeIntensity(), shakeDuration(), scene)
+                        case BirdState.Grounded =>
+                            GameEngine.Audio.playAudio("sfx_swooshing");
+                            StageRequested.emit(GamePhase.GameOver);
+                            scene
+                                |> triggerCameraShake(shakeIntensity(), shakeDuration())
+                                |> ScoreScene.finalizeScore
+                                |> GameOverScene.addGameOverUI(fontAtlas)
+                        case _ => scene
+                    };
+                    k(nextScene)
+                }
+            } with handler StageRequested {
+                def emit(target, k) = {
+                    Ref.put(Some(target), pending);
+                    k()
+                }
             }
         }
 
-    /// メインループ: 入力 → エンジン更新 → フェーズ遷移
-    /// Play ボタンクリックは emitButtons → ButtonHandler が PlayButton.pressed=true をセット。
-    /// gameLoop は consumePlayButtonPressed で読み出し時にフラグを消費する。
-    def gameLoop(fontAtlas: FontAtlas, state: GameState): Unit \ {GameEngine.Game, GameEngine.Audio, Math.Random, BirdStateChanged} =
+    /// 蓄積された遷移要求を読み出し、次の GameState を返す
+    /// Playing/Menu: シーンを作り直す。GameOver: phase だけ切替（scene は BirdStateChanged が組み済み）。
+    def applyPendingPhase(fontAtlas: FontAtlas,
+                          state: GameState,
+                          scene: Scene[NodeTag],
+                          pending: Ref[Option[GamePhase], r]):
+                          GameState \ {GameEngine.Audio, Math.Random, r} =
+        let req = Ref.get(pending);
+        Ref.put(None, pending);
+        match req {
+            case Some(GamePhase.Playing) =>
+                GameEngine.Audio.playAudio("sfx_swooshing");
+                buildState(fontAtlas, ScoreScene.getBestScore(scene))
+            case Some(GamePhase.Menu) =>
+                buildMenuState(fontAtlas, ScoreScene.getBestScore(scene))
+            case Some(GamePhase.GameOver) =>
+                {scene = scene, phase = GamePhase.GameOver}
+            case None =>
+                {scene = scene, phase = state#phase}
+        }
+
+    /// メインループ: shouldClose 判定 → engineUpdate → applyPendingPhase → render
+    /// フェーズ判定はすべて handler 側に移譲。gameLoop は scene を回すだけ。
+    def gameLoop(fontAtlas: FontAtlas, state: GameState, pending: Ref[Option[GamePhase], r]):
+                 Unit \ {GameEngine.Game, GameEngine.Audio, Math.Random, BirdStateChanged, StageRequested, r} =
         if (GameEngine.Game.shouldClose() or
             GameEngine.Game.isKeyPressed(GameEngine.Key.Escape)) ()
         else {
             let dt = clampDeltaTime(GameEngine.Game.getDeltaTime());
             let updatedScene = state#scene |> engineUpdate(dt);
-            let nextState: GameState = match state#phase {
-                case GamePhase.Playing =>
-                    let grounded = BirdScene.getBirdData(updatedScene)#state == BirdState.Grounded;
-                    {scene = updatedScene,
-                     phase = if (grounded) GamePhase.GameOver else GamePhase.Playing}
-                case GamePhase.Menu =>
-                    let (pressed, s) = MenuScene.consumePlayButtonPressed(updatedScene);
-                    if (pressed) {
-                        GameEngine.Audio.playAudio("sfx_swooshing");
-                        buildState(fontAtlas, ScoreScene.getBestScore(s))
-                    } else
-                        {scene = s, phase = GamePhase.Menu}
-                case GamePhase.GameOver =>
-                    if (GameOverScene.isAnimationFinished(updatedScene)) {
-                        let (pressed, s) = GameOverScene.consumePlayButtonPressed(updatedScene);
-                        if (pressed) buildMenuState(fontAtlas, ScoreScene.getBestScore(s))
-                        else {scene = s, phase = GamePhase.GameOver}
-                    } else
-                        {scene = updatedScene |> GameOverScene.clearPlayButton,
-                         phase = GamePhase.GameOver}
-            };
+            let nextState = applyPendingPhase(fontAtlas, state, updatedScene, pending);
             GameEngine.render(nextState#scene);
-            gameLoop(fontAtlas, nextState)
+            gameLoop(fontAtlas, nextState, pending)
         }
 }

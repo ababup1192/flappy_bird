@@ -150,7 +150,7 @@ mod GameEngine {
         TimerEvent.handleTimeouts(scene)
 
     /// ボタンプレスを検出し ButtonHandler で応答する
-    pub def emitButtons(scene: Scene[s]): Scene[s] \ Game
+    pub def emitButtons(scene: Scene[s]): Scene[s] \ {Game, ButtonEvent.ButtonHandler.Aef[s]}
             with ButtonEvent.ButtonHandler[s] =
         ButtonEvent.handleButtons(scene)
 
