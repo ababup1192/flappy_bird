@@ -59,13 +59,14 @@ mod GroundScene {
             |> Scene.addChild(name, "sprite",
                 EngineNode.Sprite2DWithState(sprite, NodeTag.NoTag))
 
-    /// 初期地面タイルを配置する（2 枚で画面幅 + スクロールバッファをカバー）
+    /// 地面シーン定義 JSON のパス
+    def sceneJsonPath(): String = "src/scenes/GroundScene.scene.json"
+
+    /// 初期地面タイルを配置する（2 枚で画面幅 + スクロールバッファをカバー）。
+    /// 構造は GroundScene.scene.json から読み込む。
     /// 画面外になったタイルの再配置は NodeRemovedHandler が担う
-    pub def addGrounds(scene: Scene[NodeTag]): Scene[NodeTag] =
-        let halfWidth = groundWidth() / 2.0;
-        scene
-            |> spawnGround("ground_0", halfWidth)
-            |> spawnGround("ground_1", halfWidth + groundWidth())
+    pub def addGrounds(scene: Scene[NodeTag]): Scene[NodeTag] \ Fs.FileRead =
+        SceneLoader.loadScene(sceneJsonPath(), scene)
 
     /// 地面グループ内の最右端 X 座標を返す（リサイクル位置決定に使用）
     def maxGroundX(scene: Scene[NodeTag]): Float64 =

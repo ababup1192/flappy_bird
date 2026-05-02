@@ -9,7 +9,7 @@
 ///   addBird は画面中央付近 (144, 256) に Flapping 状態で配置し、
 ///   重力スケール 1.0、X 速度 100、アニメは "flap" で開始する
 @Test
-def testBirdInitialState(): Unit \ Assert =
+def testBirdInitialState(): Unit \ {Assert, Fs.FileRead} =
     let scene = testScene();
     let pos = Scene.globalPosition("bird", scene);
     let birdData = BirdScene.getBirdData(scene);
@@ -29,7 +29,7 @@ def testBirdInitialState(): Unit \ Assert =
 
 /// 鳥の Area2D 子ノードは BirdArea タグを持ち、衝突検知側として monitoring=true
 @Test
-def testBirdAreaChild(): Unit \ Assert =
+def testBirdAreaChild(): Unit \ {Assert, Fs.FileRead} =
     let scene = testScene();
     match (Scene.getState("bird" :: "area" :: Nil, scene),
            Scene.getEngineNode("bird" :: "area" :: Nil, scene)) {
@@ -44,7 +44,7 @@ def testBirdAreaChild(): Unit \ Assert =
 
 /// 重力により鳥が下方向に落下する（0.5 秒積分で y > 400）
 @Test
-def testBirdFallsWithGravity(): Unit \ Assert =
+def testBirdFallsWithGravity(): Unit \ {Assert, Fs.FileRead} =
     let scene = testScene()
         |> PhysicsStep.integrate(0.5, PhysicsStep.defaultGravity());
     let pos = Scene.globalPosition("bird", scene);
@@ -56,7 +56,7 @@ def testBirdFallsWithGravity(): Unit \ Assert =
 
 /// flap で linear velocity y が -300、angular velocity が -3.0 に設定される
 @Test
-def testFlapSetsVelocity(): Unit \ Assert =
+def testFlapSetsVelocity(): Unit \ {Assert, Fs.FileRead} =
     let scene = runFlap(testScene());
     match Scene.getEngineNode("bird" :: Nil, scene) {
         case Some(EngineNode.RigidBody2DWithState(body, _)) =>
@@ -69,7 +69,7 @@ def testFlapSetsVelocity(): Unit \ Assert =
 
 /// flap 直後に重力を適用すると、上昇優位で y が初期位置より上にくる
 @Test
-def testFlapThenGravity(): Unit \ Assert =
+def testFlapThenGravity(): Unit \ {Assert, Fs.FileRead} =
     let scene = testScene()
         |> runFlap
         |> PhysicsStep.integrate(0.02, PhysicsStep.defaultGravity());
@@ -82,7 +82,7 @@ def testFlapThenGravity(): Unit \ Assert =
 
 /// 回転が -30° 未満の場合、-30° にクランプされ、角速度が 0 にリセットされる
 @Test
-def testClampRotationMin(): Unit \ Assert =
+def testClampRotationMin(): Unit \ {Assert, Fs.FileRead} =
     let scene = testScene()
         |> BirdScene.mapBirdBody((body, birdData) ->
             (body |> Node2D.setRotation(-1.0) |> RigidBody2D.setAngularVelocity(-3.0), birdData))
@@ -99,7 +99,7 @@ def testClampRotationMin(): Unit \ Assert =
 
 /// 落下中（vel.y > 0）は角速度が 1.5 に固定される
 @Test
-def testClampRotationFallAngularVelocity(): Unit \ Assert =
+def testClampRotationFallAngularVelocity(): Unit \ {Assert, Fs.FileRead} =
     let scene = testScene()
         |> BirdScene.mapBirdBody((body, birdData) ->
             (body |> Node2D.setRotation(0.0)
@@ -115,7 +115,7 @@ def testClampRotationFallAngularVelocity(): Unit \ Assert =
 
 /// 上昇中（vel.y <= 0）は角速度が保持される
 @Test
-def testClampRotationKeepsAngularVelocityWhenRising(): Unit \ Assert =
+def testClampRotationKeepsAngularVelocityWhenRising(): Unit \ {Assert, Fs.FileRead} =
     let scene = testScene()
         |> BirdScene.mapBirdBody((body, birdData) ->
             (body |> Node2D.setRotation(0.0)
@@ -135,7 +135,7 @@ def testClampRotationKeepsAngularVelocityWhenRising(): Unit \ Assert =
 
 /// Y < 0 + 上向き速度時：位置を 0 にクランプし上向き速度をゼロ化、横速度は保持される
 @Test
-def testFlappingClampsCeilingFromAbove(): Unit \ Assert =
+def testFlappingClampsCeilingFromAbove(): Unit \ {Assert, Fs.FileRead} =
     let scene = testScene()
         |> BirdScene.mapBirdBody((body, birdData) ->
             (body |> Node2D.setPosition({x = 144.0, y = -20.0})
@@ -154,7 +154,7 @@ def testFlappingClampsCeilingFromAbove(): Unit \ Assert =
 
 /// Y < 0 でも下向き速度（vel.y > 0）は保持される（上向きのみゼロ化）
 @Test
-def testFlappingClampsCeilingKeepsDownwardVelocity(): Unit \ Assert =
+def testFlappingClampsCeilingKeepsDownwardVelocity(): Unit \ {Assert, Fs.FileRead} =
     let scene = testScene()
         |> BirdScene.mapBirdBody((body, birdData) ->
             (body |> Node2D.setPosition({x = 144.0, y = -20.0})
@@ -169,7 +169,7 @@ def testFlappingClampsCeilingKeepsDownwardVelocity(): Unit \ Assert =
 
 /// Y >= 0 ならクランプされない（位置・速度ともに保持）
 @Test
-def testFlappingNoClampWhenBelowCeiling(): Unit \ Assert =
+def testFlappingNoClampWhenBelowCeiling(): Unit \ {Assert, Fs.FileRead} =
     let scene = testScene()
         |> BirdScene.mapBirdBody((body, birdData) ->
             (body |> Node2D.setPosition({x = 144.0, y = 100.0})
@@ -191,7 +191,7 @@ def testFlappingNoClampWhenBelowCeiling(): Unit \ Assert =
 /// フラップ直後の物理積分＋回転クランプ後、回転はクランプ範囲内、
 /// 角速度は負（フラップで設定された -3.0 が保持される）
 @Test
-def testFlapIntegrateClamp(): Unit \ Assert =
+def testFlapIntegrateClamp(): Unit \ {Assert, Fs.FileRead} =
     let scene = testScene()
         |> runFlap
         |> PhysicsStep.integrate(0.02, PhysicsStep.defaultGravity())
@@ -214,7 +214,7 @@ def testFlapIntegrateClamp(): Unit \ Assert =
 /// processAll で鳥のスプライトアニメーションが進行する
 /// fps=10, 0.15s 後にフレーム 1（bird_orange_1）に進む
 @Test
-def testBirdSpriteAnimationAdvances(): Unit \ Assert =
+def testBirdSpriteAnimationAdvances(): Unit \ {Assert, Fs.FileRead} =
     match withMockRandom(() -> withMockRecycle(() -> testScene() |> Scene.processAll(0.15, false)))
         |> Scene.getEngineNode("bird" :: "sprite" :: Nil) {
         case Some(EngineNode.AnimSprite2DWithState(sprite, _)) =>
@@ -228,7 +228,7 @@ def testBirdSpriteAnimationAdvances(): Unit \ Assert =
 
 /// Grounded 状態にすると速度がゼロ・重力無効・state=Grounded になる
 @Test
-def testHandleGroundedFreezesBird(): Unit \ Assert =
+def testHandleGroundedFreezesBird(): Unit \ {Assert, Fs.FileRead} =
     let scene = withMockAudioAndState(() ->
         testScene()
             |> runFlap
@@ -259,7 +259,7 @@ def testFlyingStateIgnoresFlapInput(): Unit \ {Assert, Fs.FileRead} =
 
 /// Hit 状態にすると angular velocity が 2.0 になる（落下回転演出）
 @Test
-def testHandleHitSetsAngularVelocity(): Unit \ Assert =
+def testHandleHitSetsAngularVelocity(): Unit \ {Assert, Fs.FileRead} =
     let pipePath = PipeScene.topPath(PipeScene.pairName(0));
     let scene = withMockAudioAndState(() ->
         testScene()

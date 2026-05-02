@@ -238,7 +238,8 @@ mod Game {
 
     /// プレイ中のシーンを構築する（Phase Playing 用）
     /// bestScore: セッション中のベストスコア（初回は 0）
-    pub def buildPlayingScene(fontAtlas: FontAtlas, bestScore: BestScore): Scene[NodeTag] \ Math.Random =
+    /// GroundScene.addGrounds が JSON ファイル読み込みを行うため Fs.FileRead を伴う
+    pub def buildPlayingScene(fontAtlas: FontAtlas, bestScore: BestScore): Scene[NodeTag] \ {Math.Random, Fs.FileRead} =
         Scene.empty()
             |> addBackground
             |> BirdScene.addBird

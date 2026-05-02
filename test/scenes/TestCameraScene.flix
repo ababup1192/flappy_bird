@@ -8,7 +8,7 @@
 /// カメラの初期状態（enabled / anchor / offset / position）
 ///   addCamera は鳥の初期 X (144) に配置、FixedTopLeft、offset=(-72, 0) で有効化される
 @Test
-def testCameraInitialState(): Unit \ Assert =
+def testCameraInitialState(): Unit \ {Assert, Fs.FileRead} =
     match Scene.getEngineNode("camera" :: Nil, testScene()) {
         case Some(EngineNode.Camera2DWithState(cam, _)) =>
             Assert.assertEq(
@@ -66,7 +66,7 @@ def cameraStateOf(scene: Scene[NodeTag]): (Float64, Float64, Float64) =
 
 /// process は target（鳥）の X 位置にカメラを追従させる
 @Test
-def testCameraFollowsTargetX(): Unit \ Assert =
+def testCameraFollowsTargetX(): Unit \ {Assert, Fs.FileRead} =
     let scene = testScene()
         |> BirdScene.mapBirdBody((body, birdData) ->
             (Node2D.setPosition({x = 800.0, y = 200.0}, body), birdData))
@@ -86,7 +86,7 @@ def testCameraFollowsTargetX(): Unit \ Assert =
 ///   process(delta=0.016)
 ///   → frame1: remaining ≈ 0.18 - 0.016 = 0.164, intensity = 3.0 × 0.9 = 2.7
 @Test
-def testCameraShakeDecaysOnProcess(): Unit \ Assert =
+def testCameraShakeDecaysOnProcess(): Unit \ {Assert, Fs.FileRead} =
     let triggered = withMockRandom(() ->
         testScene() |> CameraScene.triggerShake(3.0, 0.18));
     let advanced = runCameraProcess(0.016, triggered);
@@ -103,7 +103,7 @@ def testCameraShakeDecaysOnProcess(): Unit \ Assert =
 /// シェイクが残り時間を使い切ったら基準オフセットに戻り、状態も非アクティブに固まる
 ///   shakeDuration を超える delta を 1 度に与えると残り時間 ≤ 0 で消化
 @Test
-def testCameraShakeStopsWhenRemainingExpires(): Unit \ Assert =
+def testCameraShakeStopsWhenRemainingExpires(): Unit \ {Assert, Fs.FileRead} =
     let triggered = withMockRandom(() ->
         testScene() |> CameraScene.triggerShake(3.0, 0.18));
     // 0.5 秒 → 0.18 を超えて消化

@@ -21,16 +21,18 @@ def withMockRecycle(f: Unit -> a \ ef + Recycle): a \ ef + Math.Random =
             k(PipeScene.spawnRecycledPair(ScoreScene.getScore(scene), scene))
     }
 
-/// GameEngine.Audio のモックハンドラ（playAudio/stopAudio は no-op）
-def withMockAudio(f: Unit -> a \ GameEngine.Audio): a =
+/// GameEngine.Audio のモックハンドラ（playAudio/stopAudio は no-op）。
+/// 他のエフェクト（Fs.FileRead など）は呼び出し元へ伝播する
+def withMockAudio(f: Unit -> a \ ef + GameEngine.Audio): a \ ef =
     run f() with handler GameEngine.Audio {
         def playAudio(_, k) = k(())
         def stopAudio(_, k) = k(())
     }
 
 /// GameEngine.Audio + BirdStateChanged のモックハンドラ
-/// handleHit / handleGrounded を経由するテスト用。BirdStateChanged は scene をそのまま返す（shake 無効）
-def withMockAudioAndState(f: Unit -> a \ {GameEngine.Audio, BirdStateChanged}): a =
+/// handleHit / handleGrounded を経由するテスト用。BirdStateChanged は scene をそのまま返す（shake 無効）。
+/// 他のエフェクト（Fs.FileRead など）は呼び出し元へ伝播する
+def withMockAudioAndState(f: Unit -> a \ ef + GameEngine.Audio + BirdStateChanged): a \ ef =
     run {
         run f() with handler GameEngine.Audio {
             def playAudio(_, k) = k(())
@@ -51,8 +53,9 @@ def testFontAtlas(): FontAtlas = {
     glyphs = Map.empty()
 }
 
-/// buildPlayingScene のシーンを取得（Math.Random をモックで処理）
-def testScene(): Scene[NodeTag] =
+/// buildPlayingScene のシーンを取得（Math.Random をモックで処理）。
+/// GroundScene.scene.json などを読み込むため Fs.FileRead を伴う
+def testScene(): Scene[NodeTag] \ Fs.FileRead =
     withMockRandom(() -> Game.buildPlayingScene(testFontAtlas(), 0))
 
 /// buildMenuScene のシーンを取得（MenuScene.scene.json を読み込むため Fs.FileRead を伴う）
@@ -86,7 +89,7 @@ def runFlap(scene: Scene[NodeTag]): Scene[NodeTag] =
 ///   + ground × 2 (+sprite) + pipe × 3 (Marker2D 親 + top(+sprite) + bottom(+sprite) + coin)
 ///   = 31 ノード、ルート 9 個
 @Test
-def testBuildSceneStructure(): Unit \ Assert =
+def testBuildSceneStructure(): Unit \ {Assert, Fs.FileRead} =
     let scene = testScene();
     Assert.assertEq(
         expected = (31, 9, 2, 3),
@@ -101,7 +104,7 @@ def testBuildSceneStructure(): Unit \ Assert =
 
 /// 背景は CanvasLayer（drawLayer=-1）として構築される
 @Test
-def testBackgroundIsCanvasLayer(): Unit \ Assert =
+def testBackgroundIsCanvasLayer(): Unit \ {Assert, Fs.FileRead} =
     match Scene.getEngineNode("background" :: Nil, testScene()) {
         case Some(EngineNode.CanvasLayerWithState(cl, _)) =>
             Assert.assertEq(expected = -1, CanvasLayer.getDrawLayer(cl))

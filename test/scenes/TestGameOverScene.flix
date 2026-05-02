@@ -34,7 +34,7 @@ def testMedalThresholds(): Unit \ Assert =
 ///   - score=15, bestScore=15 → あり（今回スコア）
 ///   - score=3,  bestScore=15 → あり（ベストスコア由来、メダル永続化）
 @Test
-def testGameOverUIMedalPresence(): Unit \ Assert =
+def testGameOverUIMedalPresence(): Unit \ {Assert, Fs.FileRead} =
     let medalPath = "gameover" :: "medal" :: Nil;
     let buildWith = (score, best) ->
         testScene()
@@ -50,7 +50,7 @@ def testGameOverUIMedalPresence(): Unit \ Assert =
 
 /// addGameOverUI 後に HUD スコアラベルが非表示になる
 @Test
-def testGameOverHidesHudScore(): Unit \ Assert =
+def testGameOverHidesHudScore(): Unit \ {Assert, Fs.FileRead} =
     let scene = GameOverScene.addGameOverUI(testFontAtlas(), testScene());
     match Scene.getEngineNode(ScoreScene.scoreLabelPath(), scene) {
         case Some(EngineNode.Label2DWithState(label, _)) =>
@@ -66,7 +66,7 @@ def testGameOverHidesHudScore(): Unit \ Assert =
 /// 0.5 秒経過時点では未完了、0.9 秒で完了する。
 /// updateAnimation を経由しない初期状態（elapsed=0）も未完了。
 @Test
-def testGameOverAnimationFinishedGate(): Unit \ Assert =
+def testGameOverAnimationFinishedGate(): Unit \ {Assert, Fs.FileRead} =
     let initial = GameOverScene.addGameOverUI(testFontAtlas(), testScene());
     let half = GameOverScene.updateAnimation(0.5, initial);
     let past = GameOverScene.updateAnimation(0.9, initial);
@@ -81,7 +81,7 @@ def testGameOverAnimationFinishedGate(): Unit \ Assert =
 ///   0.2 秒（< 0.3）: 非表示のまま
 ///   0.4 秒（>= 0.3）: 表示される
 @Test
-def testGameOverAnimationShowsPanelAfterThreshold(): Unit \ Assert =
+def testGameOverAnimationShowsPanelAfterThreshold(): Unit \ {Assert, Fs.FileRead} =
     let panelPath = "gameover" :: "score_panel" :: Nil;
     let initial = GameOverScene.addGameOverUI(testFontAtlas(), testScene());
     let beforeThreshold = GameOverScene.updateAnimation(0.2, initial);

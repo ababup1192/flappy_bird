@@ -1,7 +1,7 @@
 // Tests for SceneLoader — JSON ファイルからシーンを読み込んで構築する基盤の検証
 //
-// MenuScene.scene.json を直接読み込み、期待されるノード構造・パラメータが
-// 正しく EngineNode へ変換されることを確認する
+// MenuScene.scene.json と GroundScene.scene.json を直接読み込み、
+// 期待されるノード構造・パラメータが正しく EngineNode へ変換されることを確認する
 
 // ========================================================================
 // 共通ヘルパー
@@ -10,6 +10,10 @@
 /// MenuScene.scene.json をテスト用に読み込んだ scene を取得する
 def loadedMenuScene(): Scene[NodeTag] \ Fs.FileRead =
     SceneLoader.loadScene("src/scenes/MenuScene.scene.json", Scene.empty())
+
+/// GroundScene.scene.json をテスト用に読み込んだ scene を取得する
+def loadedGroundScene(): Scene[NodeTag] \ Fs.FileRead =
+    SceneLoader.loadScene("src/scenes/GroundScene.scene.json", Scene.empty())
 
 // ========================================================================
 // 構造テスト
@@ -95,4 +99,62 @@ def testPlayButtonTextureButton(): Unit \ {Assert, Fs.FileRead} =
                  (pos#x, pos#y), (size#x, size#y),
                  TextureButton.isCentered(button)))
         case _ => bug!("play_button should be TextureButton with NoTag")
+    }
+
+// ========================================================================
+// トップレベル配列 + StaticBody2D ビルダー（GroundScene.scene.json）
+// ========================================================================
+
+/// GroundScene.scene.json はトップレベル配列で 2 つのルートノード ground_0/ground_1 を
+/// 持ち、それぞれに sprite 子ノードが付く（合計 4 ノード）
+@Test
+def testGroundSceneJsonArrayRoots(): Unit \ {Assert, Fs.FileRead} =
+    let scene = loadedGroundScene();
+    Assert.assertEq(
+        expected = (4, true, true, true, true),
+        (Scene.nodeCount(scene),
+         not Option.isEmpty(Scene.getEngineNode("ground_0" :: Nil, scene)),
+         not Option.isEmpty(Scene.getEngineNode("ground_1" :: Nil, scene)),
+         not Option.isEmpty(Scene.getEngineNode("ground_0" :: "sprite" :: Nil, scene)),
+         not Option.isEmpty(Scene.getEngineNode("ground_1" :: "sprite" :: Nil, scene))))
+
+/// ground_0 は StaticBody2D で tag=Ground、位置 (168,456)、矩形コリジョン形状を持つ
+@Test
+def testGroundStaticBody2DWithGroundTag(): Unit \ {Assert, Fs.FileRead} =
+    match Scene.getEngineNode("ground_0" :: Nil, loadedGroundScene()) {
+        case Some(EngineNode.StaticBody2DWithState(body, NodeTag.Ground)) =>
+            let pos = Node2D.getPosition(body);
+            let shape = match CollisionObject2D.getCollisionShape(body) {
+                case Some(s) => s
+                case None    => bug!("ground_0 should have a collision shape")
+            };
+            let shapeDims = match shape {
+                case CollisionShape2D.RectShape2D(r) => (r#width, r#height)
+                case _ => bug!("ground_0 should be a RectShape2D")
+            };
+            Assert.assertEq(
+                expected = ((168.0, 456.0), (336.0, 112.0)),
+                ((pos#x, pos#y), shapeDims))
+        case _ => bug!("ground_0 should be StaticBody2D with Ground tag")
+    }
+
+/// ground_0 は groups フィールドで "grounds" グループに登録される
+@Test
+def testGroundIsInGroundsGroup(): Unit \ {Assert, Fs.FileRead} =
+    let scene = loadedGroundScene();
+    let groundPaths = Scene.getNodesInGroup("grounds", scene);
+    Assert.assertEq(
+        expected = 2,
+        List.length(groundPaths))
+
+/// ground_0/sprite は Sprite2D で zIndex=10、位置 (0,0) に配置（親 ground_0 からの相対）
+@Test
+def testGroundSpriteHasZIndex10(): Unit \ {Assert, Fs.FileRead} =
+    match Scene.getEngineNode("ground_0" :: "sprite" :: Nil, loadedGroundScene()) {
+        case Some(EngineNode.Sprite2DWithState(sprite, NodeTag.NoTag)) =>
+            Assert.assertEq(
+                expected = ("ground", 10),
+                (let Sprite2D.Sprite2D(r) = sprite; r#texture,
+                 CanvasItem.getZIndex(sprite)))
+        case _ => bug!("ground_0/sprite should be Sprite2D with NoTag")
     }

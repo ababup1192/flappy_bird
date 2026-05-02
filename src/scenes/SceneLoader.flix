@@ -1,12 +1,16 @@
 // SceneLoader — JSON ファイルからシーンツリーを構築する
 //
-// JSON のルートオブジェクトを Scene のルートに addNode として追加し、
-// その children を addChildAt で再帰的に追加する。
-// すべてのノードには NodeTag.NoTag が付与される（Phase 1）。
-// 状態を持つ NodeTag（Bird, ScoreLabel など）が必要な場合は、
+// JSON のルートは単一オブジェクト or 配列を受け付ける。
+// 配列の場合は各要素を独立したルートノードとして scene に addNode する。
+// オブジェクトの場合は単一ルートノードとして addNode し、その children を再帰的に追加する。
+//
+// 各ノードに付与する NodeTag は JSON の "tag" フィールドで指定する。
+// 状態を持つ NodeTag（Bird, ScoreLabel, Camera, GameOverAnim）は JSON で指定できないため、
 // 呼び出し側で読み込み後に Scene.setState で差し替えること。
 //
-// 対応ノード型: CanvasLayer / Sprite2D / TextureButton
+// 対応ノード型: CanvasLayer / Sprite2D / TextureButton / StaticBody2D
+// 対応 tag: Ground / Pipe / PipePart / Coin / BirdArea / NoTag（デフォルト）
+// 対応 collision shape: RectShape2D / CircleShape2D
 
 mod SceneLoader {
     use Json.JsonElement.{JsonObject, JsonArray}
@@ -18,16 +22,18 @@ mod SceneLoader {
     // ========================================================================
 
     /// JSON ファイルを読み込み、scene にノードツリーを追加して返す。
-    /// JSON のルートノードは addNode（シーンのルート）として追加され、
-    /// その children は addChildAt で再帰的に追加される。
+    /// JSON のルートが配列なら各要素をルートノードとして addNode、
+    /// 単一オブジェクトなら単一ルートノードとして addNode する。
+    /// children は addChildAt で再帰的に追加される。
     /// 失敗（読み込み失敗・JSON パースエラー・未対応ノード型・必須キー欠落）時は
     /// bug! でクラッシュする
     pub def loadScene(path: String, scene: Scene[NodeTag]): Scene[NodeTag] \ Fs.FileRead =
         let content = run { Fs.ReadFile.read(path) } with Fs.ReadFile.runWithFileRead;
         let result = forM (
             text     <- content |> Result.mapErr(e -> "failed to read: ${e}");
-            json     <- Json.Parse.parse(text) |> Option.toOk("JSON parse failed");
-            outScene <- addJsonAt(Nil, json, scene)
+            // 末尾改行で flix-json の eoi が失敗するため事前に trim する
+            json     <- Json.Parse.parse(String.trim(text)) |> Option.toOk("JSON parse failed");
+            outScene <- addJsonAtTop(json, scene)
                 |> Result.mapErr(match JsonError(p, expected) ->
                     "at ${p}: expected ${expected}")
         ) yield outScene;
@@ -40,6 +46,20 @@ mod SceneLoader {
     // JSON → Scene 変換
     // ========================================================================
 
+    /// JSON ルートを処理する。配列なら各要素を、オブジェクトなら単一ノードを
+    /// シーンのルートに追加する
+    def addJsonAtTop(json: Json.JsonElement,
+                     scene: Scene[NodeTag]): Result[Json.JsonError, Scene[NodeTag]] =
+        match json {
+            case JsonObject(_)        => addJsonAt(Nil, json, scene)
+            case JsonArray(arr)       =>
+                List.foldLeft(
+                    (acc, child) -> Result.flatMap(s -> addJsonAt(Nil, child, s), acc),
+                    Ok(scene),
+                    Vector.toList(arr))
+            case _                    => Err(JsonError(Root, Set#{"JsonObject or JsonArray"}))
+        }
+
     /// 指定された parentPath の子として JSON ノードを追加し、再帰的に children も追加する。
     /// parentPath が空のときはシーンのルートに addNode する
     def addJsonAt(parentPath: NodePath, json: Json.JsonElement,
@@ -50,10 +70,13 @@ mod SceneLoader {
                     nodeType   <- (Json.getAtKey(Root, "type", map): Result[Json.JsonError, String]);
                     name       <- (Json.getAtKey(Root, "name", map): Result[Json.JsonError, String]);
                     engineNode <- buildByType(nodeType, map);
-                    outScene   <- addChildren(
-                                      parentPath ::: name :: Nil,
-                                      map,
-                                      addAt(parentPath, name, engineNode, scene))
+                    groups     <- parseGroups(map);
+                    outScene   <- {
+                        let nodePath = parentPath ::: name :: Nil;
+                        let added = addAt(parentPath, name, engineNode, scene)
+                            |> applyGroups(nodePath, groups);
+                        addChildren(nodePath, map, added)
+                    }
                 ) yield outScene
             case _ => Err(JsonError(Root, Set#{"JsonObject"}))
         }
@@ -80,6 +103,11 @@ mod SceneLoader {
             case Some(_)              => Err(JsonError(Root, Set#{"JsonArray"}))
         }
 
+    /// ノードに groups を適用する（リストが空なら scene そのまま）
+    def applyGroups(path: NodePath, groups: List[String],
+                    scene: Scene[NodeTag]): Scene[NodeTag] =
+        List.foldLeft((acc, group) -> Scene.addToGroup(path, group, acc), scene, groups)
+
     // ========================================================================
     // ノード型ディスパッチ
     // ========================================================================
@@ -91,12 +119,13 @@ mod SceneLoader {
             case "CanvasLayer"   => buildCanvasLayer(map)
             case "Sprite2D"      => buildSprite2D(map)
             case "TextureButton" => buildTextureButton(map)
+            case "StaticBody2D"  => buildStaticBody2D(map)
             case unknown         =>
                 Err(JsonError(Root, Set#{"known node type (got: ${unknown})"}))
         }
 
     // ========================================================================
-    // ヘルパー
+    // 共通フィールドの解析（tag / groups / shape / vec2）
     // ========================================================================
 
     /// JSON 配列 [x, y] を Vec2.Vec2 に変換する
@@ -109,6 +138,61 @@ mod SceneLoader {
             {x = x, y = y}
         }
 
+    /// 任意の "tag" フィールドを NodeTag に変換する。
+    /// キーがなければ NodeTag.NoTag を返す。
+    /// 状態を持つ NodeTag（Bird, ScoreLabel, Camera, GameOverAnim）は JSON で指定できない
+    def parseTag(map: Map[String, Json.JsonElement]): Result[Json.JsonError, NodeTag] =
+        forM (
+            tagOpt <- (Json.getAtKeyOpt(Root, "tag", map): Result[Json.JsonError, Option[String]]);
+            tag    <- nodeTagFromString(tagOpt)
+        ) yield tag
+
+    /// "tag" 文字列を NodeTag に変換する。未対応の値は Err を返す
+    def nodeTagFromString(opt: Option[String]): Result[Json.JsonError, NodeTag] =
+        match opt {
+            case None              => Ok(NodeTag.NoTag)
+            case Some("NoTag")     => Ok(NodeTag.NoTag)
+            case Some("Ground")    => Ok(NodeTag.Ground)
+            case Some("Pipe")      => Ok(NodeTag.Pipe)
+            case Some("PipePart")  => Ok(NodeTag.PipePart)
+            case Some("Coin")      => Ok(NodeTag.Coin)
+            case Some("BirdArea")  => Ok(NodeTag.BirdArea)
+            case Some(unknown)     =>
+                Err(JsonError(Root, Set#{"known tag (got: ${unknown})"}))
+        }
+
+    /// 任意の "groups" フィールドを List[String] に変換する。キーがなければ空リスト
+    def parseGroups(map: Map[String, Json.JsonElement]): Result[Json.JsonError, List[String]] =
+        forM (
+            opt <- (Json.getAtKeyOpt(Root, "groups", map): Result[Json.JsonError, Option[List[String]]])
+        ) yield Option.getWithDefault(Nil, opt)
+
+    /// "shape" オブジェクトから CollisionShape2D を構築する。
+    /// "kind" で形状を識別し、形状ごとの追加フィールドを読み取る
+    def parseShape(map: Map[String, Json.JsonElement]): Result[Json.JsonError, CollisionShape2D] =
+        forM (
+            shapeMap <- (Json.getAtKey(Root, "shape", map): Result[Json.JsonError, Map[String, Json.JsonElement]]);
+            kind     <- (Json.getAtKey(Root, "kind", shapeMap): Result[Json.JsonError, String]);
+            shape    <- buildShape(kind, shapeMap)
+        ) yield shape
+
+    /// shape の "kind" に応じて対応する CollisionShape2D ビルダーを呼び出す
+    def buildShape(kind: String,
+                   map: Map[String, Json.JsonElement]): Result[Json.JsonError, CollisionShape2D] =
+        match kind {
+            case "RectShape2D" =>
+                forM (
+                    width  <- (Json.getAtKey(Root, "width", map): Result[Json.JsonError, Float64]);
+                    height <- (Json.getAtKey(Root, "height", map): Result[Json.JsonError, Float64])
+                ) yield CollisionShape2D.RectShape2D({width = width, height = height})
+            case "CircleShape2D" =>
+                forM (
+                    radius <- (Json.getAtKey(Root, "radius", map): Result[Json.JsonError, Float64])
+                ) yield CollisionShape2D.CircleShape2D({radius = radius})
+            case unknown =>
+                Err(JsonError(Root, Set#{"known shape kind (got: ${unknown})"}))
+        }
+
     // ========================================================================
     // ノード型ビルダー
     // ========================================================================
@@ -116,22 +200,32 @@ mod SceneLoader {
     /// CanvasLayer ノードを構築する。"layer" は描画レイヤー番号
     def buildCanvasLayer(map: Map[String, Json.JsonElement]): Result[Json.JsonError, EngineNode[NodeTag]] =
         forM (
+            tag       <- parseTag(map);
             drawLayer <- (Json.getAtKey(Root, "layer", map): Result[Json.JsonError, Int32])
-        ) yield EngineNode.CanvasLayerWithState(CanvasLayer.make(drawLayer), NodeTag.NoTag)
+        ) yield EngineNode.CanvasLayerWithState(CanvasLayer.make(drawLayer), tag)
 
-    /// Sprite2D ノードを構築する。"texture" / "pos" / "scale" が必須
+    /// Sprite2D ノードを構築する。
+    /// 必須: "texture" / "pos" / "scale"
+    /// 任意: "zIndex"（描画順）
     def buildSprite2D(map: Map[String, Json.JsonElement]): Result[Json.JsonError, EngineNode[NodeTag]] =
         forM (
-            pos     <- parseVec2("pos", map);
-            scale   <- parseVec2("scale", map);
-            texture <- (Json.getAtKey(Root, "texture", map): Result[Json.JsonError, String])
-        ) yield EngineNode.Sprite2DWithState(Sprite2D.make(texture, pos, scale), NodeTag.NoTag)
+            tag       <- parseTag(map);
+            pos       <- parseVec2("pos", map);
+            scale     <- parseVec2("scale", map);
+            texture   <- (Json.getAtKey(Root, "texture", map): Result[Json.JsonError, String]);
+            zIndexOpt <- (Json.getAtKeyOpt(Root, "zIndex", map): Result[Json.JsonError, Option[Int32]])
+        ) yield {
+            let sprite = Sprite2D.make(texture, pos, scale)
+                |> applyZIndex(zIndexOpt);
+            EngineNode.Sprite2DWithState(sprite, tag)
+        }
 
     /// TextureButton ノードを構築する。
     /// 必須: "textureNormal" / "pos" / "scale" / "size"
-    /// 任意: "texturePressed" / "centered"（centered のデフォルトは TextureButton.make の既定値）
+    /// 任意: "texturePressed" / "centered"
     def buildTextureButton(map: Map[String, Json.JsonElement]): Result[Json.JsonError, EngineNode[NodeTag]] =
         forM (
+            tag               <- parseTag(map);
             pos               <- parseVec2("pos", map);
             scale             <- parseVec2("scale", map);
             size              <- parseVec2("size", map);
@@ -144,7 +238,27 @@ mod SceneLoader {
                 |> Node2D.setScale(scale)
                 |> applyTexturePressed(texturePressedOpt)
                 |> applyCentered(centeredOpt);
-            EngineNode.TextureButtonWithState(button, NodeTag.NoTag)
+            EngineNode.TextureButtonWithState(button, tag)
+        }
+
+    /// StaticBody2D ノードを構築する。
+    /// 必須: "pos" / "shape"
+    def buildStaticBody2D(map: Map[String, Json.JsonElement]): Result[Json.JsonError, EngineNode[NodeTag]] =
+        forM (
+            tag   <- parseTag(map);
+            pos   <- parseVec2("pos", map);
+            shape <- parseShape(map)
+        ) yield EngineNode.StaticBody2DWithState(StaticBody2D.make(pos, shape), tag)
+
+    // ========================================================================
+    // ビルダー用ヘルパー（任意フィールド適用）
+    // ========================================================================
+
+    /// 任意の zIndex を Sprite2D に適用する（None ならそのまま返す）
+    def applyZIndex(opt: Option[Int32], sprite: Sprite2D): Sprite2D =
+        match opt {
+            case Some(zIndex) => CanvasItem.setZIndex(zIndex, sprite)
+            case None         => sprite
         }
 
     /// 任意の texturePressed を TextureButton に適用する（None ならそのまま返す）
@@ -157,7 +271,7 @@ mod SceneLoader {
     /// 任意の centered を TextureButton に適用する（None ならそのまま返す）
     def applyCentered(opt: Option[Bool], button: TextureButton): TextureButton =
         match opt {
-            case Some(c) => TextureButton.setCentered(c, button)
-            case None    => button
+            case Some(centered) => TextureButton.setCentered(centered, button)
+            case None           => button
         }
 }

@@ -26,7 +26,7 @@ def testPipeGapSpriteOffsetCurve(): Unit \ Assert =
 
 /// パイプペアの bottom 子ノードは StaticBody2D + PipePart タグ + monitorable=true
 @Test
-def testPipeIsMonitorableStaticBody(): Unit \ Assert =
+def testPipeIsMonitorableStaticBody(): Unit \ {Assert, Fs.FileRead} =
     let pair0 = PipeScene.pairName(0);
     match Scene.getEngineNode(PipeScene.bottomPath(pair0), testScene()) {
         case Some(EngineNode.StaticBody2DWithState(body, NodeTag.PipePart)) =>
@@ -44,7 +44,7 @@ def testPipeIsMonitorableStaticBody(): Unit \ Assert =
 ///   top_0:    (576, -50)   ← 上下 250px ずつ離れる
 ///   X 間隔は pipeSpacingX = 182
 @Test
-def testPipeInitialPositions(): Unit \ Assert =
+def testPipeInitialPositions(): Unit \ {Assert, Fs.FileRead} =
     let scene = testScene();
     let bottomOf = i -> vecToTuple(Scene.globalPositionAt(PipeScene.bottomPath(PipeScene.pairName(i)), scene));
     let top0 = vecToTuple(Scene.globalPositionAt(PipeScene.topPath(PipeScene.pairName(0)), scene));
@@ -75,7 +75,7 @@ def testSpawnPipePairAt(): Unit \ Assert =
 /// Flapping → Hit 遷移時に当該パイプが鳥の collisionExceptions に登録される
 /// （bird.gd HitState._init `add_collision_exception_with(other_body)` 相当）
 @Test
-def testBirdPipeCollisionFlappingToHit(): Unit \ Assert =
+def testBirdPipeCollisionFlappingToHit(): Unit \ {Assert, Fs.FileRead} =
     let pipePath = PipeScene.topPath(PipeScene.pairName(0));
     let scene = withMockAudioAndState(() -> BirdScene.onBirdHitPipe(pipePath = pipePath, testScene()));
     match Scene.getEngineNode("bird" :: Nil, scene) {
@@ -89,7 +89,7 @@ def testBirdPipeCollisionFlappingToHit(): Unit \ Assert =
 
 /// Hit 状態で同じパイプ（exception 登録済）と再衝突しても状態は変わらない
 @Test
-def testBirdPipeCollisionHitNoChange(): Unit \ Assert =
+def testBirdPipeCollisionHitNoChange(): Unit \ {Assert, Fs.FileRead} =
     let pipePath = PipeScene.topPath(PipeScene.pairName(0));
     let scene = withMockAudioAndState(() ->
         testScene()
@@ -100,7 +100,7 @@ def testBirdPipeCollisionHitNoChange(): Unit \ Assert =
 /// Hit 状態で別パイプ（exception 未登録）に衝突したら Grounded に遷移する
 /// （パイプの上に着地して回り続ける現象の防止）
 @Test
-def testBirdPipeCollisionHitToGroundedOnDifferentPipe(): Unit \ Assert =
+def testBirdPipeCollisionHitToGroundedOnDifferentPipe(): Unit \ {Assert, Fs.FileRead} =
     let hitPipePath = PipeScene.topPath(PipeScene.pairName(0));
     let landedPipePath = PipeScene.bottomPath(PipeScene.pairName(1));
     let scene = withMockAudioAndState(() ->
@@ -111,7 +111,7 @@ def testBirdPipeCollisionHitToGroundedOnDifferentPipe(): Unit \ Assert =
 
 /// Grounded 状態でパイプ衝突しても状態は変わらない
 @Test
-def testBirdPipeCollisionGroundedNoChange(): Unit \ Assert =
+def testBirdPipeCollisionGroundedNoChange(): Unit \ {Assert, Fs.FileRead} =
     let pipePath = PipeScene.topPath(PipeScene.pairName(0));
     let scene = withMockAudioAndState(() ->
         testScene()
@@ -126,7 +126,7 @@ def testBirdPipeCollisionGroundedNoChange(): Unit \ Assert =
 /// パイプペアが画面外になると process で親ごとリサイクルされる
 /// 自殺主体は親 Marker2D（NodeTag.Pipe）。サブツリー削除で top/bottom/coin がまとめて消える
 @Test
-def testPipeRecyclesWhenOffScreen(): Unit \ Assert =
+def testPipeRecyclesWhenOffScreen(): Unit \ {Assert, Fs.FileRead} =
     let pair0 = PipeScene.pairName(0);
     let result = withMockRandom(() -> withMockRecycle(() -> {
         let initial = testScene();
@@ -144,7 +144,7 @@ def testPipeRecyclesWhenOffScreen(): Unit \ Assert =
 /// 画面外になればリサイクルされる
 /// 再発防止: 自殺判定を Coin に置くと NoTag 化により発動しなくなるため、親 Pipe を主体とする
 @Test
-def testPipeRecyclesAfterCoinPassed(): Unit \ Assert =
+def testPipeRecyclesAfterCoinPassed(): Unit \ {Assert, Fs.FileRead} =
     let pair0 = PipeScene.pairName(0);
     let result = withMockRandom(() -> withMockRecycle(() -> {
         let initial = testScene();

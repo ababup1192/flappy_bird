@@ -8,7 +8,7 @@
 /// 地面タイル 2 枚の中心位置
 ///   ground_0: (168, 456) / ground_1: (504, 456)
 @Test
-def testGroundPositions(): Unit \ Assert =
+def testGroundPositions(): Unit \ {Assert, Fs.FileRead} =
     let scene = testScene();
     Assert.assertEq(
         expected = ((168.0, 456.0), (504.0, 456.0)),
@@ -17,7 +17,7 @@ def testGroundPositions(): Unit \ Assert =
 
 /// 地面ノードは StaticBody2D + Ground タグ + monitorable=true（鳥の Area2D から検知される）
 @Test
-def testGroundIsMonitorableStaticBody(): Unit \ Assert =
+def testGroundIsMonitorableStaticBody(): Unit \ {Assert, Fs.FileRead} =
     match Scene.getEngineNode("ground_0" :: Nil, testScene()) {
         case Some(EngineNode.StaticBody2DWithState(body, NodeTag.Ground)) =>
             Assert.assertTrue(CollisionObject2D.isMonitorable(body))
@@ -30,7 +30,7 @@ def testGroundIsMonitorableStaticBody(): Unit \ Assert =
 
 /// 鳥が地面に衝突すると Grounded になる
 @Test
-def testBirdGroundCollision(): Unit \ Assert =
+def testBirdGroundCollision(): Unit \ {Assert, Fs.FileRead} =
     let scene = withMockAudioAndState(() -> BirdScene.onBirdHitGround(testScene()));
     Assert.assertEq(expected = BirdState.Grounded, BirdScene.getBirdData(scene)#state)
 
@@ -42,7 +42,7 @@ def testBirdGroundCollision(): Unit \ Assert =
 ///     → 上方向に 23 押し出し → 410 - 23 = 387
 ///   期待: y = groundTopY(400) - birdRadius(13) = 387
 @Test
-def testBirdClampedAboveGround(): Unit \ Assert =
+def testBirdClampedAboveGround(): Unit \ {Assert, Fs.FileRead} =
     let scene = testScene()
         |> BirdScene.mapBirdBody((body, birdData) ->
             (Node2D.setPosition({x = 144.0, y = 410.0}, body), birdData))
@@ -58,7 +58,7 @@ def testBirdClampedAboveGround(): Unit \ Assert =
 /// 鳥（カメラ追従元）を遠くに飛ばすと ground_0 が viewportLeftX より左になり削除、
 /// NodeRemovedHandler で新タイルが最右端に再スポーンされてタイル数 2 を維持する
 @Test
-def testGroundRecyclesWhenOffScreen(): Unit \ Assert =
+def testGroundRecyclesWhenOffScreen(): Unit \ {Assert, Fs.FileRead} =
     let result = withMockRandom(() -> withMockRecycle(() -> {
         let initial = testScene();
         // bird を ground_0(x=168) より遥か遠く（x=2000）に移動 → カメラ追従後に viewportLeftX=1928

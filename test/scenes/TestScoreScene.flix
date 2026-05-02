@@ -8,7 +8,7 @@
 /// incrementScore は NodeTag.ScoreLabel と Label2D テキストの両方を同時更新する
 ///   初期 score=0 → "0" / increment 後 score=1 → "1"
 @Test
-def testScoreScoreLabelSyncedWithText(): Unit \ Assert =
+def testScoreScoreLabelSyncedWithText(): Unit \ {Assert, Fs.FileRead} =
     let textOf = scene -> match Scene.getEngineNode(ScoreScene.scoreLabelPath(), scene) {
         case Some(EngineNode.Label2DWithState(label, _)) => Label2D.getText(label)
         case _ => bug!("score_label not found")
@@ -29,7 +29,7 @@ def testScoreScoreLabelSyncedWithText(): Unit \ Assert =
 /// `(BirdArea, Coin)` のみ採点処理にディスパッチする構造。
 /// 一度通過した coin は NoTag に変わるので 2 回目以降は採点ハンドラに来ない。
 @Test
-def testScoreOnBirdPassedCoinIncrementsAndTagsCoin(): Unit \ Assert =
+def testScoreOnBirdPassedCoinIncrementsAndTagsCoin(): Unit \ {Assert, Fs.FileRead} =
     let coinPath = PipeScene.coinPath(PipeScene.pairName(0));
     let initial = testScene();
     let afterPass = withMockAudio(() ->
@@ -55,7 +55,7 @@ def testScoreOnBirdPassedCoinIncrementsAndTagsCoin(): Unit \ Assert =
 ///   - score=20, best=10 → best=20（更新）
 ///   - score=5,  best=15 → best=15（据え置き）
 @Test
-def testScoreFinalizeMaxOfScoreAndBest(): Unit \ Assert =
+def testScoreFinalizeMaxOfScoreAndBest(): Unit \ {Assert, Fs.FileRead} =
     let updated = testScene()
         |> ScoreScene.setScore(20)
         |> ScoreScene.setBestScore(10)
