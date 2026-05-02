@@ -154,10 +154,10 @@ instance InputEvent.InputHandler[NodeTag] {
 // ========================================================================
 
 instance AreaHandler[NodeTag] {
-    type Aef = { GameEngine.Audio }
+    type Aef = { GameEngine.Audio, BirdStateChanged }
     pub def onAreaEntered(selfPath: NodePath, selfState: NodeTag,
                           otherPath: NodePath, otherState: NodeTag,
-                          scene: Scene[NodeTag]): Scene[NodeTag] \ GameEngine.Audio =
+                          scene: Scene[NodeTag]): Scene[NodeTag] \ {GameEngine.Audio, BirdStateChanged} =
         match (selfState, otherState) {
             case (NodeTag.BirdArea, NodeTag.Ground) =>
                 Game.onBirdHitGround(scene)
@@ -334,34 +334,32 @@ mod Game {
 
     /// 鳥が地面に衝突したときの処理
     /// 鳥を Grounded 状態にする。地面への押し戻しは PhysicsStep.resolveStaticCollisions が自動処理。
-    /// SE は BirdScene.setBirdState 側で再生される（bird.gd GroundedState._init 準拠）
-    pub def onBirdHitGround(scene: Scene[NodeTag]): Scene[NodeTag] \ GameEngine.Audio =
+    /// SE と camera shake は BirdScene.setBirdState 側で発火される（bird.gd GroundedState._init 準拠）
+    pub def onBirdHitGround(scene: Scene[NodeTag]): Scene[NodeTag] \ {GameEngine.Audio, BirdStateChanged} =
         let birdData = BirdScene.getBirdData(scene);
-        match birdData#state {
-            case BirdState.Flapping =>
-                scene
-                    |> BirdScene.setBirdState(BirdState.Grounded)
-                    |> triggerCameraShake(shakeIntensity(), shakeDuration())
-            case BirdState.Hit =>
-                scene
-                    |> BirdScene.setBirdState(BirdState.Grounded)
-            case _ => scene
-        }
+        let flappingOrHit = match birdData#state {
+            case BirdState.Flapping => true
+            case BirdState.Hit      => true
+            case _                  => false
+        };
+        if(flappingOrHit) BirdScene.setBirdState(BirdState.Grounded, scene)
+        else scene
 
     /// 鳥がパイプに衝突したときの処理
     /// Flapping → Hit に遷移し、鳥をパイプの左端まで押し戻す
-    /// SE は BirdScene.setBirdState 側で再生される（bird.gd HitState._init 準拠）
-    pub def onBirdHitPipe(pipePath: {pipePath = NodePath}, scene: Scene[NodeTag]): Scene[NodeTag] \ GameEngine.Audio =
+    /// SE と camera shake は BirdScene.setBirdState 側で発火される（bird.gd HitState._init 準拠）
+    pub def onBirdHitPipe(pipePath: {pipePath = NodePath}, scene: Scene[NodeTag]): Scene[NodeTag] \ {GameEngine.Audio, BirdStateChanged} =
         let birdData = BirdScene.getBirdData(scene);
-        match birdData#state {
-            case BirdState.Flapping =>
-                let pipeX = Scene.globalPositionAt(pipePath#pipePath, scene)#x;
-                scene
-                    |> BirdScene.setBirdState(BirdState.Hit)
-                    |> pushBirdOutOfPipe(pipeX)
-                    |> triggerCameraShake(shakeIntensity(), shakeDuration())
-            case _ => scene
-        }
+        let flapping = match birdData#state {
+            case BirdState.Flapping => true
+            case _                  => false
+        };
+        if(flapping) {
+            let pipeX = Scene.globalPositionAt(pipePath#pipePath, scene)#x;
+            scene
+                |> BirdScene.setBirdState(BirdState.Hit)
+                |> pushBirdOutOfPipe(pipeX)
+        } else scene
 
     /// 鳥がコインを通過したときの処理
     /// スコアを +1 し、効果音を鳴らし、コインの NodeTag を NoTag に変更して再採点を防止する
@@ -394,15 +392,12 @@ mod Game {
     // エンジン更新パイプライン
     // ========================================================================
 
-    /// エンジン更新パイプライン（input → process → physics → collision → resolveStatic → screen → timers）
-    /// resolveStaticCollisions は emitCollision の後に呼ぶ。逆順だと bird が
-    /// ground 境界ピッタリに揃って Area2D 重なり判定が外れ、onBirdHitGround が発火しない。
-    def engineUpdate(dt: Float64, scene: Scene[NodeTag]): Scene[NodeTag] \ {GameEngine.Audio, GameEngine.Game, Math.Random} =
+    /// エンジン更新パイプライン（input → process → physics → collision → screen → timers）
+    def engineUpdate(dt: Float64, scene: Scene[NodeTag]): Scene[NodeTag] \ {GameEngine.Audio, GameEngine.Game, Math.Random, BirdStateChanged} =
         (GameEngine.emitInput
         >> GameEngine.process(dt, false)
         >> GameEngine.physicsProcess(dt, false, PhysicsStep.defaultGravity())
         >> GameEngine.emitCollision
-        >> GameEngine.resolveStaticCollisions
         >> GameEngine.emitScreenNotify(screenWidth = screenWi(), screenHeight = screenHi())
         >> GameEngine.emitTimers)(scene)
 
@@ -444,11 +439,25 @@ mod Game {
     // ========================================================================
 
     /// ゲームのエントリポイント
+    /// BirdStateChanged ハンドラを設置してカメラシェイクを発火する
+    /// （bird.gd の `state_changed` シグナル → shaker._on_bird_state_changed 相当）
     pub def start(fontAtlas: FontAtlas): Unit \ {GameEngine.Game, GameEngine.Audio, Math.Random} =
-        gameLoop(fontAtlas, buildMenuState(fontAtlas, 0))
+        run {
+            gameLoop(fontAtlas, buildMenuState(fontAtlas, 0))
+        } with handler BirdStateChanged {
+            def emit(newState, scene, k) = {
+                let isHitOrGrounded = match newState {
+                    case BirdState.Hit      => true
+                    case BirdState.Grounded => true
+                    case _                  => false
+                };
+                    
+                k(if (isHitOrGrounded) triggerCameraShake(shakeIntensity(), shakeDuration(), scene) else scene)
+            }
+        }
 
     /// メインループ: 入力 → エンジン更新 → フェーズ遷移
-    def gameLoop(fontAtlas: FontAtlas, state: GameState): Unit \ {GameEngine.Game, GameEngine.Audio, Math.Random} =
+    def gameLoop(fontAtlas: FontAtlas, state: GameState): Unit \ {GameEngine.Game, GameEngine.Audio, Math.Random, BirdStateChanged} =
         if (GameEngine.Game.shouldClose()) ()
         else if (GameEngine.Game.isKeyPressed(GameEngine.Key.Escape)) ()
         else {

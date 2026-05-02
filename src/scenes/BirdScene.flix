@@ -32,6 +32,13 @@ pub enum BirdInputEvent with Eq, ToString {
     case MouseButtonPressed(GameEngine.MouseButton)
 }
 
+/// 鳥の状態変化イベント（bird.gd の `state_changed` シグナル相当）
+/// setBirdState 内で新状態と現在の Scene を emit し、ハンドラ側で
+/// カメラシェイク等の副作用を行ってから新しい Scene を返す。
+pub eff BirdStateChanged {
+    def emit(newState: BirdState, scene: Scene[NodeTag]): Scene[NodeTag]
+}
+
 mod BirdScene {
     use NodeBuilder.{position, rotation, show, hide}
 
@@ -257,7 +264,7 @@ mod BirdScene {
     /// Flapping: 重力復元、x 速度=birdData#speed、初回 flap (y=flapVelocityY, angVel=flapAngularVelocity, sfx_wing)
     /// Hit:      横移動停止、回転加速（sfx_hit + sfx_die）
     /// Grounded: 停止（速度ゼロ、重力無効）。直前状態が Hit 以外なら sfx_hit
-    pub def setBirdState(newState: BirdState, scene: Scene[NodeTag]): Scene[NodeTag] \ GameEngine.Audio =
+    pub def setBirdState(newState: BirdState, scene: Scene[NodeTag]): Scene[NodeTag] \ {GameEngine.Audio, BirdStateChanged} =
         // GameEngine.Audio
         match newState {
             case BirdState.Flapping =>
@@ -272,7 +279,7 @@ mod BirdScene {
             case BirdState.Flying => ()
         };
 
-        scene |> mapBirdBody((body, birdData) ->
+        let updatedScene = scene |> mapBirdBody((body, birdData) ->
             let updatedData = {state = newState | birdData};
             match newState {
                 case BirdState.Flying =>
@@ -299,7 +306,8 @@ mod BirdScene {
                         |> RigidBody2D.setAngularVelocity(0.0)
                         |> RigidBody2D.setGravityScale(0.0),
                      updatedData)
-            })
+            });
+        BirdStateChanged.emit(newState, updatedScene)
 
     // ========================================================================
     // ヘルパー: RigidBody2D と BirdData の変換・取得
