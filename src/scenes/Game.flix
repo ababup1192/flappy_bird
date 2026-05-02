@@ -95,6 +95,15 @@ pub type alias GameState = {
 
 instance Node[NodeTag] {
     type Aef = { Math.Random }
+    // Bird: bird.gd `FlappingState._init → flap()` 相当の初期 flap を発火
+    redef ready(node: EngineNode[NodeTag], path: NodePath,
+                scene: Scene[NodeTag]): (EngineNode[NodeTag], Scene[NodeTag]) \ Math.Random =
+        match node {
+            case EngineNode.RigidBody2DWithState(_, NodeTag.Bird(_)) =>
+                checked_ecast(BirdScene.ready(node, path, scene))
+            case _ => (node, scene)
+        }
+
     // Camera2D: 追従+シェイク / LevelManager: リサイクル
     // Bird は bird.gd に倣い _process を使わない（physicsProcess のみ）
     redef process(delta: Float64, node: EngineNode[NodeTag],
@@ -509,7 +518,7 @@ mod Game {
                     let animFinished = GameOverScene.isAnimationFinished(animScene);
                     if (animFinished and GameOverScene.isPlayButtonPressed(animScene)) {
                         let bestScore = ScoreScene.getBestScore(animScene);
-                        checked_ecast(buildMenuState(fontAtlas, bestScore))
+                        buildMenuState(fontAtlas, bestScore)
                     } else {
                         {scene = animScene, phase = GamePhase.GameOver}
                     }
