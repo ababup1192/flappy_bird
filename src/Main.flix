@@ -1,4 +1,4 @@
-def main(): Unit \ IO =
+def main(): Unit \ {IO, Chan, NonDet} =
     if (GameEngine.ensureMainThread()) ()
     else {
         let config: GameEngine.EngineConfig = {
@@ -73,4 +73,7 @@ def main(): Unit \ IO =
         } with LwjglLayer.withLwjgl(config)
           with Math.Random.runWithIO
           with Fs.FileRead.runWithIO
+          with Fs.Glob.runWithIO
+          with Fs.ModificationTime.runWithFileTime
+          with Fs.FileTime.runWithIO
     }

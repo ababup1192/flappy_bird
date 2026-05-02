@@ -289,11 +289,16 @@ mod Game {
     /// gameLoop が前フレームとの差分を検出して scene を組み立てる。
     /// Recycle ハンドラはノード自殺時のリサイクル要求を Math.Random + spawn 関数で
     /// 実体化する責務を担う（NodeRemovedHandler から Math.Random を切り離すため）。
-    pub def start(fontAtlas: FontAtlas): Unit \ {GameEngine.Game, GameEngine.Audio, Math.Random, Fs.FileRead} =
+    /// reloadRx は HotReload watcher スレッドからの非同期通知。gameLoop は select の
+    /// default 節で非ブロッキング受信し、シグナル到達フレームで現在の Phase を再構築する
+    pub def start(fontAtlas: FontAtlas):
+                  Unit \ {GameEngine.Game, GameEngine.Audio, Math.Random, Fs.FileRead,
+                          Chan, NonDet, IO, Fs.Glob, Fs.ModificationTime} =
         region rc {
             let phaseRef: Ref[GamePhase, rc] = Ref.fresh(rc, GamePhase.Menu);
+            let reloadRx = HotReload.startWatcher();
             run {
-                gameLoop(fontAtlas, GamePhase.Menu, buildMenuScene(fontAtlas, 0))
+                gameLoop(fontAtlas, GamePhase.Menu, reloadRx, buildMenuScene(fontAtlas, 0))
             } with handler BirdStateChanged {
                 def emit(newState, scene, k) = {
                     let nextScene = match newState {
@@ -334,26 +339,34 @@ mod Game {
                 GameOverScene.enterGameOver(fontAtlas, scene)
         }
 
-    /// メインループ: shouldClose 判定 → engineUpdate → phase 差分検出 → render
+    /// メインループ: shouldClose 判定 → engineUpdate → phase 差分 / hot reload 検出 → render
     /// previousPhase: 前フレーム末の phase（変化検出のため引き連れる）
-    def gameLoop(fontAtlas: FontAtlas, previousPhase: GamePhase, scene: Scene[NodeTag]):
-                 Unit \ {GameEngine.Game, GameEngine.Audio, Math.Random, Fs.FileRead, BirdStateChanged, Phase, Recycle} =
+    /// reloadRx:      HotReload watcher スレッドからの通知チャネル
+    ///
+    /// hot reload は Menu / Playing でのみ発火する。GameOver は overlay 方式で
+    /// 構築されるため、再構築すると重複表示になるためスキップする
+    def gameLoop(fontAtlas: FontAtlas, previousPhase: GamePhase,
+                 reloadRx: Receiver[Unit], scene: Scene[NodeTag]):
+                 Unit \ {GameEngine.Game, GameEngine.Audio, Math.Random, Fs.FileRead,
+                         Chan, NonDet, BirdStateChanged, Phase, Recycle} =
         if (GameEngine.Game.shouldClose() or
             GameEngine.Game.isKeyPressed(GameEngine.Key.Escape)) ()
         else {
             let dt = GameEngine.Game.getDeltaTime();
             let updatedScene = scene
-            
                 |> GameEngine.process(dt, false)
                 |> GameEngine.physicsProcess(dt, false, PhysicsStep.defaultGravity())
                 |> GameEngine.handleInput
                 |> GameEngine.handleButtons
                 |> GameEngine.handleCollisions;
             let currentPhase = Phase.get();
-            let nextScene = if (currentPhase != previousPhase)
+            // hot reload: GameOver 中は overlay 重複を避けるためスキップ
+            let reloadSignal = HotReload.pollReload(reloadRx);
+            let reloadRequested = reloadSignal and currentPhase != GamePhase.GameOver;
+            let nextScene = if (currentPhase != previousPhase or reloadRequested)
                                 applyPhaseChange(currentPhase, fontAtlas, updatedScene)
                             else updatedScene;
             GameEngine.render(nextScene);
-            gameLoop(fontAtlas, currentPhase, nextScene)
+            gameLoop(fontAtlas, currentPhase, reloadRx, nextScene)
         }
 }
