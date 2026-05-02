@@ -117,6 +117,14 @@ mod GameOverScene {
     // シーン構築
     // ========================================================================
 
+    /// ゲームオーバー画面への遷移処理
+    /// 効果音再生 → スコア確定 → UI 追加をまとめる
+    pub def enterGameOver(fontAtlas: FontAtlas, scene: Scene[NodeTag]): Scene[NodeTag] \ GameEngine.Audio =
+        GameEngine.Audio.playAudio("sfx_swooshing");
+        scene
+            |> ScoreScene.finalizeScore
+            |> addGameOverUI(fontAtlas)
+
     /// ゲームオーバー UI をシーンに追加する
     /// score / bestScore は scene の ScoreLabel / BestScoreLabel から読み出す
     /// CanvasLayer (layer=2) に GAME OVER ラベル、スコアパネル、メダル、スコア/ベストスコア数値、Play ボタンを配置する
@@ -148,8 +156,7 @@ mod GameOverScene {
             |> CanvasItem.hide;
         let sceneWithLayer = scene
             // HUD のスコアラベルを非表示にする
-            |> Scene.mapEngineNode(ScoreScene.scoreLabelPath(),
-                EngineNode.mapLabel2D(CanvasItem.hide))
+            |> ScoreScene.hideScoreLabel
             // ゲームオーバーレイヤーを追加（GameOverAnim state でアニメーション経過時間を管理）
             |> Scene.addNode(layerName(),
                 EngineNode.CanvasLayerWithState(layer,

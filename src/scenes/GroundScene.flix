@@ -17,7 +17,7 @@ mod GroundScene {
     pub def groundGroup(): String = "grounds"
 
     /// 地面タイルの幅（px）。参考実装 168 の 2 倍
-    pub def groundWidth(): Float64 = 336.0
+    def groundWidth(): Float64 = 336.0
 
     /// 地面タイルの高さ（px）。参考実装 56 の 2 倍
     def groundHeight(): Float64 = 112.0
@@ -45,8 +45,8 @@ mod GroundScene {
     /// 地面タイル 1 枚をシーンに追加する
     /// name: ノード名（ユニーク）
     /// xCenter: タイル中心の X 座標
-    pub def spawnGround(name: String, xCenter: Float64,
-                        scene: Scene[NodeTag]): Scene[NodeTag] =
+    def spawnGround(name: String, xCenter: Float64,
+                    scene: Scene[NodeTag]): Scene[NodeTag] =
         let body = StaticBody2D.make(
             {x = xCenter, y = groundCenterY()},
             groundCollisionShape());
@@ -66,6 +66,20 @@ mod GroundScene {
         scene
             |> spawnGround("ground_0", halfWidth)
             |> spawnGround("ground_1", halfWidth + groundWidth())
+
+    /// 地面グループ内の最右端 X 座標を返す（リサイクル位置決定に使用）
+    def maxGroundX(scene: Scene[NodeTag]): Float64 =
+        Scene.getNodesInGroup(groundGroup(), scene)
+            |> List.map(p -> Scene.globalPositionAt(p, scene)#x)
+            |> List.maximum
+            |> Option.getWithDefault(0.0)
+
+    /// リサイクル時に新タイルを spawn する
+    /// 新タイルの X は現在の最右端 + groundWidth。ID は X 座標から導出
+    pub def spawnRecycledGround(scene: Scene[NodeTag]): Scene[NodeTag] =
+        let nextX = maxGroundX(scene) + groundWidth();
+        let id = Float64.tryToInt32(nextX) |> Option.getWithDefault(0);
+        spawnGround("ground_${id}", nextX, scene)
 
     // ========================================================================
     // ロジック（process）

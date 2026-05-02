@@ -162,17 +162,17 @@ instance AreaHandler[NodeTag] {
                           scene: Scene[NodeTag]): Scene[NodeTag] \ {GameEngine.Audio, BirdStateChanged} =
         match (selfState, otherState) {
             case (NodeTag.BirdArea, NodeTag.Ground) =>
-                Game.onBirdHitGround(scene)
+                BirdScene.onBirdHitGround(scene)
             case (NodeTag.Ground, NodeTag.BirdArea) =>
-                Game.onBirdHitGround(scene)
+                BirdScene.onBirdHitGround(scene)
             case (NodeTag.BirdArea, NodeTag.PipePart) =>
-                Game.onBirdHitPipe(pipePath = otherPath, scene)
+                BirdScene.onBirdHitPipe(pipePath = otherPath, scene)
             case (NodeTag.PipePart, NodeTag.BirdArea) =>
-                Game.onBirdHitPipe(pipePath = selfPath, scene)
+                BirdScene.onBirdHitPipe(pipePath = selfPath, scene)
             case (NodeTag.BirdArea, NodeTag.Coin) =>
-                Game.onBirdPassedCoin(coinPath = otherPath, scene)
+                ScoreScene.onBirdPassedCoin(coinPath = otherPath, scene)
             case (NodeTag.Coin, NodeTag.BirdArea) =>
-                Game.onBirdPassedCoin(coinPath = selfPath, scene)
+                ScoreScene.onBirdPassedCoin(coinPath = selfPath, scene)
             case _ => checked_ecast(scene)
         }
 }
@@ -188,9 +188,7 @@ instance NodeRemovedHandler[NodeTag] {
                         scene: Scene[NodeTag]): Scene[NodeTag] \ Math.Random =
         match state {
             case NodeTag.Ground =>
-                let nextX = Game.maxGroundX(scene) + GroundScene.groundWidth();
-                let id = Float64.tryToInt32(nextX) |> Option.getWithDefault(0);
-                checked_ecast(GroundScene.spawnGround("ground_${id}", nextX, scene))
+                checked_ecast(GroundScene.spawnRecycledGround(scene))
             case NodeTag.Pipe =>
                 let score = ScoreScene.getScore(scene);
                 PipeScene.spawnRecycledPair(score, scene)
@@ -275,8 +273,7 @@ mod Game {
             |> ScoreScene.addHud(fontAtlas, bestScore)
             |> GroundScene.addGrounds
             |> MenuScene.addMenuUI
-            |> Scene.mapEngineNode(ScoreScene.scoreLabelPath(),
-                EngineNode.mapLabel2D(CanvasItem.hide));
+            |> ScoreScene.hideScoreLabel;
         {scene = scene, phase = GamePhase.Menu}
 
     // ========================================================================
@@ -294,47 +291,6 @@ mod Game {
                 EngineNode.Sprite2DWithState(sprite, NodeTag.NoTag))
 
     // ========================================================================
-    // 衝突応答
-    // ========================================================================
-
-    /// 鳥が地面に衝突したときの処理
-    /// 鳥を Grounded 状態にする。地面への押し戻しは PhysicsStep.resolveStaticCollisions が自動処理。
-    /// SE と camera shake は BirdScene.handleGrounded 側で発火される（bird.gd GroundedState._init 準拠）
-    pub def onBirdHitGround(scene: Scene[NodeTag]): Scene[NodeTag] \ {GameEngine.Audio, BirdStateChanged} =
-        let birdData = BirdScene.getBirdData(scene);
-        let flappingOrHit = match birdData#state {
-            case BirdState.Flapping => true
-            case BirdState.Hit      => true
-            case _                  => false
-        };
-        if(flappingOrHit) BirdScene.handleGrounded(scene)
-        else scene
-
-    /// 鳥がパイプに衝突したときの処理
-    /// Flapping → Hit: 衝突パイプを collisionException に登録し、鳥は重力で落下する
-    /// Hit → Grounded: 衝突パイプが exception に未登録 = 別パイプの上に乗ってしまった
-    ///                 状態とみなし、Grounded に遷移してゲームオーバーへ繋ぐ
-    /// SE と camera shake は BirdScene 側のハンドラで発火される
-    pub def onBirdHitPipe(pipePath: {pipePath = NodePath}, scene: Scene[NodeTag]): Scene[NodeTag] \ {GameEngine.Audio, BirdStateChanged} =
-        let birdData = BirdScene.getBirdData(scene);
-        match birdData#state {
-            case BirdState.Flapping =>
-                BirdScene.handleHit(pipePath#pipePath, scene)
-            case BirdState.Hit =>
-                if (BirdScene.bodyHasCollisionException(pipePath#pipePath, scene)) scene
-                else BirdScene.handleGrounded(scene)
-            case _ => scene
-        }
-
-    /// 鳥がコインを通過したときの処理
-    /// スコアを +1 し、効果音を鳴らし、コインの NodeTag を NoTag に変更して再採点を防止する
-    pub def onBirdPassedCoin(coinPath: {coinPath = NodePath}, scene: Scene[NodeTag]): Scene[NodeTag] \ GameEngine.Audio =
-        GameEngine.Audio.playAudio("sfx_point");
-        scene
-            |> ScoreScene.incrementScore
-            |> Scene.setState(coinPath#coinPath, NodeTag.NoTag)
-
-    // ========================================================================
     // エンジン更新パイプライン
     // ========================================================================
 
@@ -350,13 +306,6 @@ mod Game {
     pub def getViewportLeftX(scene: Scene[NodeTag]): Float64 =
         let birdPos = Scene.globalPosition(BirdScene.name(), scene);
         birdPos#x + CameraScene.offsetX()
-
-    /// 地面グループ内の最右端 X 座標を返す（NodeRemovedHandler の再配置に使う）
-    pub def maxGroundX(scene: Scene[NodeTag]): Float64 =
-        Scene.getNodesInGroup(GroundScene.groundGroup(), scene)
-            |> List.map(p -> Scene.globalPositionAt(p, scene)#x)
-            |> List.maximum
-            |> Option.getWithDefault(0.0)
 
     // ========================================================================
     // メインループ
@@ -378,13 +327,11 @@ mod Game {
                             CameraScene.triggerShake(CameraScene.shakeIntensity(),
                                                      CameraScene.shakeDuration(), scene)
                         case BirdState.Grounded =>
-                            GameEngine.Audio.playAudio("sfx_swooshing");
                             StageRequested.emit(GamePhase.GameOver);
                             scene
                                 |> CameraScene.triggerShake(CameraScene.shakeIntensity(),
                                                             CameraScene.shakeDuration())
-                                |> ScoreScene.finalizeScore
-                                |> GameOverScene.addGameOverUI(fontAtlas)
+                                |> GameOverScene.enterGameOver(fontAtlas)
                         case _ => scene
                     };
                     k(nextScene)

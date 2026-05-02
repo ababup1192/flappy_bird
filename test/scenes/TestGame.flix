@@ -545,7 +545,7 @@ def testHandleHitSetsAngularVelocity(): Unit \ Assert =
 /// 鳥が地面に衝突すると Grounded になること
 @Test
 def testBirdGroundCollision(): Unit \ Assert =
-    let scene = withMockAudioAndState(() -> Game.onBirdHitGround(testScene()));
+    let scene = withMockAudioAndState(() -> BirdScene.onBirdHitGround(testScene()));
     Assert.assertEq(expected = BirdState.Grounded, BirdScene.getBirdData(scene)#state)
 
 /// PhysicsStep.resolveStaticCollisions が鳥を地面の上にクランプすること
@@ -772,7 +772,7 @@ def testSpawnPipePairAt(): Unit \ Assert =
 @Test
 def testBirdPipeCollisionFlappingToHit(): Unit \ Assert =
     let pipePath = PipeScene.topPath(PipeScene.pairName(0));
-    let scene = withMockAudioAndState(() -> Game.onBirdHitPipe(pipePath = pipePath, testScene()));
+    let scene = withMockAudioAndState(() -> BirdScene.onBirdHitPipe(pipePath = pipePath, testScene()));
     Assert.assertEq(expected = BirdState.Hit, BirdScene.getBirdData(scene)#state)
 
 /// パイプ衝突時に当該パイプが鳥の collisionExceptions に登録されること
@@ -780,7 +780,7 @@ def testBirdPipeCollisionFlappingToHit(): Unit \ Assert =
 @Test
 def testBirdPipeCollisionRegistersException(): Unit \ Assert =
     let pipePath = PipeScene.topPath(PipeScene.pairName(0));
-    let scene = withMockAudioAndState(() -> Game.onBirdHitPipe(pipePath = pipePath, testScene()));
+    let scene = withMockAudioAndState(() -> BirdScene.onBirdHitPipe(pipePath = pipePath, testScene()));
     match Scene.getEngineNode("bird" :: Nil, scene) {
         case Some(EngineNode.RigidBody2DWithState(body, _)) =>
             Assert.assertTrue(RigidBody2D.hasCollisionException(pipePath, body))
@@ -794,7 +794,7 @@ def testBirdPipeCollisionHitNoChange(): Unit \ Assert =
     let scene = withMockAudioAndState(() ->
         testScene()
             |> BirdScene.handleHit(pipePath)
-            |> Game.onBirdHitPipe(pipePath = pipePath));
+            |> BirdScene.onBirdHitPipe(pipePath = pipePath));
     Assert.assertEq(expected = BirdState.Hit, BirdScene.getBirdData(scene)#state)
 
 /// Hit 状態で別パイプ（collisionException 未登録）に衝突したら Grounded に遷移すること
@@ -806,7 +806,7 @@ def testBirdPipeCollisionHitToGroundedOnDifferentPipe(): Unit \ Assert =
     let scene = withMockAudioAndState(() ->
         testScene()
             |> BirdScene.handleHit(hitPipePath)
-            |> Game.onBirdHitPipe(pipePath = landedPipePath));
+            |> BirdScene.onBirdHitPipe(pipePath = landedPipePath));
     Assert.assertEq(expected = BirdState.Grounded, BirdScene.getBirdData(scene)#state)
 
 /// bodyHasCollisionException は handleHit で登録したパスに対して true を返すこと
@@ -828,7 +828,7 @@ def testBirdPipeCollisionGroundedNoChange(): Unit \ Assert =
     let scene = withMockAudioAndState(() ->
         testScene()
             |> BirdScene.handleGrounded
-            |> Game.onBirdHitPipe(pipePath = pipePath));
+            |> BirdScene.onBirdHitPipe(pipePath = pipePath));
     Assert.assertEq(expected = BirdState.Grounded, BirdScene.getBirdData(scene)#state)
 
 // ========================================================================

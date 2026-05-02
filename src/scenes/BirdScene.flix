@@ -303,6 +303,37 @@ mod BirdScene {
         BirdStateChanged.emit(BirdState.Grounded, updatedScene)
 
     // ========================================================================
+    // 衝突応答（AreaHandler から呼ばれる）
+    // ========================================================================
+
+    /// 鳥が地面に衝突したときの処理
+    /// 鳥を Grounded 状態にする。地面への押し戻しは PhysicsStep.resolveStaticCollisions が自動処理。
+    /// SE と camera shake は handleGrounded 側で発火される（bird.gd GroundedState._init 準拠）
+    pub def onBirdHitGround(scene: Scene[NodeTag]): Scene[NodeTag] \ {GameEngine.Audio, BirdStateChanged} =
+        let flappingOrHit = match getBirdData(scene)#state {
+            case BirdState.Flapping => true
+            case BirdState.Hit      => true
+            case _                  => false
+        };
+        if (flappingOrHit) handleGrounded(scene)
+        else scene
+
+    /// 鳥がパイプに衝突したときの処理
+    /// Flapping → Hit: 衝突パイプを collisionException に登録し、鳥は重力で落下する
+    /// Hit → Grounded: 衝突パイプが exception に未登録 = 別パイプの上に乗ってしまった
+    ///                 状態とみなし、Grounded に遷移してゲームオーバーへ繋ぐ
+    /// SE と camera shake は handleHit / handleGrounded 側で発火される
+    pub def onBirdHitPipe(pipePath: {pipePath = NodePath}, scene: Scene[NodeTag]): Scene[NodeTag] \ {GameEngine.Audio, BirdStateChanged} =
+        match getBirdData(scene)#state {
+            case BirdState.Flapping =>
+                handleHit(pipePath#pipePath, scene)
+            case BirdState.Hit =>
+                if (bodyHasCollisionException(pipePath#pipePath, scene)) scene
+                else handleGrounded(scene)
+            case _ => scene
+        }
+
+    // ========================================================================
     // ヘルパー: RigidBody2D と BirdData の変換・取得
     // ========================================================================
 
