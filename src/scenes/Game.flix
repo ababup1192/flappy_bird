@@ -425,16 +425,6 @@ mod Game {
          pipeScene)
 
     // ========================================================================
-    // 入力
-    // ========================================================================
-
-    /// フラップ入力（スペースキーまたはマウス左クリック）が押されているか
-    /// メニュー / GameOver のフェーズ遷移検出に使う
-    def isFlapInputPressed(): Bool \ GameEngine.Game =
-        GameEngine.Game.isKeyPressed(GameEngine.Key.Space) or
-        GameEngine.Game.isMouseButtonPressed(GameEngine.MouseButton.Left)
-
-    // ========================================================================
     // メインループ
     // ========================================================================
 
@@ -457,15 +447,17 @@ mod Game {
         }
 
     /// メインループ: 入力 → エンジン更新 → フェーズ遷移
+    /// flap 入力は emitInput → BirdScene.input が flapJustPressed フラグをセットする。
+    /// gameLoop はフレーム冒頭で同フラグをクリアし、エンジン更新後に読み出して遷移判定に使う。
     def gameLoop(fontAtlas: FontAtlas, state: GameState): Unit \ {GameEngine.Game, GameEngine.Audio, Math.Random, BirdStateChanged} =
         if (GameEngine.Game.shouldClose()) ()
         else if (GameEngine.Game.isKeyPressed(GameEngine.Key.Escape)) ()
         else {
             let dt = clampDeltaTime(GameEngine.Game.getDeltaTime());
+            let frameScene = state#scene |> BirdScene.clearFlapJustPressed;
             let nextState: GameState = match state#phase {
                 case GamePhase.Playing =>
-                    // 入力（キーボード/マウス）は emitInput → InputHandler で処理される
-                    let updatedScene = state#scene
+                    let updatedScene = frameScene
                         |> engineUpdate(dt);
                     let birdData = BirdScene.getBirdData(updatedScene);
                     if (birdData#state == BirdState.Grounded) {
@@ -477,32 +469,28 @@ mod Game {
                     } else
                         {scene = updatedScene, phase = GamePhase.Playing}
                 case GamePhase.Menu =>
-                    let updatedScene = state#scene
+                    let updatedScene = frameScene
                         |> engineUpdate(dt);
-                    let inputPressed = isFlapInputPressed();
                     let birdData = BirdScene.getBirdData(updatedScene);
-                    let justPressed = inputPressed and not birdData#flapPressed;
-                    if (justPressed) {
+                    if (birdData#flapJustPressed) {
                         GameEngine.Audio.playAudio("sfx_swooshing");
                         let bestScore = ScoreScene.getBestScore(updatedScene);
                         buildState(fontAtlas, bestScore)
                     } else {
-                        let newScene = BirdScene.setFlapPressed(inputPressed, updatedScene);
-                        {scene = newScene, phase = GamePhase.Menu}
+                        {scene = updatedScene, phase = GamePhase.Menu}
                     }
                 case GamePhase.GameOver =>
-                    let animScene = GameOverScene.updateAnimation(dt, state#scene);
+                    // GameOver では engineUpdate を回さないので emitInput だけ走らせて flapJustPressed を取得
+                    let inputScene = frameScene |> GameEngine.emitInput;
+                    let animScene = GameOverScene.updateAnimation(dt, inputScene);
                     let animFinished = GameOverScene.isAnimationFinished(animScene);
                     let birdData = BirdScene.getBirdData(animScene);
-                    let inputPressed = isFlapInputPressed();
-                    let justPressed = inputPressed and not birdData#flapPressed;
-                    if (justPressed and animFinished and GameOverScene.isPlayButtonClicked(
+                    if (birdData#flapJustPressed and animFinished and GameOverScene.isPlayButtonClicked(
                             GameEngine.Game.getMousePosition())) {
                         let bestScore = ScoreScene.getBestScore(animScene);
                         checked_ecast(buildMenuState(fontAtlas, bestScore))
                     } else {
-                        let newScene = BirdScene.setFlapPressed(inputPressed, animScene);
-                        {scene = newScene, phase = GamePhase.GameOver}
+                        {scene = animScene, phase = GamePhase.GameOver}
                     }
             };
             GameEngine.render(nextState#scene);

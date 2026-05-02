@@ -17,6 +17,7 @@
     "allow": [
       "Bash(rtk *)",
       "Bash(ls *)",
+      "Bash(cd *)",
       "Bash(cat *)",
       "Bash(head *)",
       "Bash(tail *)",
