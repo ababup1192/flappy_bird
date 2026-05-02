@@ -159,18 +159,22 @@ instance Node[NodeTag] {
 
 // ========================================================================
 // InputHandler 実装（bird.gd _input 相当を BirdScene にディスパッチ）
+// Menu / GameOver(アニメ完了後) のスペースキー押下は Play ボタンと等価扱い
 // ========================================================================
 
 instance InputEvent.InputHandler[NodeTag] {
-    type Aef = { GameEngine.Audio }
+    type Aef = { GameEngine.Audio, StageRequested }
     redef onKeyPressed(key: GameEngine.Key,
-                       scene: Scene[NodeTag]): Scene[NodeTag] \ GameEngine.Audio =
-        BirdScene.input(BirdInputEvent.KeyPressed(key), scene)
+                       scene: Scene[NodeTag]): Scene[NodeTag] \ {GameEngine.Audio, StageRequested} =
+        if (key == GameEngine.Key.Space and Game.canStart(scene)) {
+            StageRequested.emit(GamePhase.Playing); scene
+        } else
+            BirdScene.input(BirdInputEvent.KeyPressed(key), scene)
 
     redef onMouseButtonPressed(button: GameEngine.MouseButton,
                                _position: Vec2.Vec2,
-                               scene: Scene[NodeTag]): Scene[NodeTag] \ GameEngine.Audio =
-        BirdScene.input(BirdInputEvent.MouseButtonPressed(button), scene)
+                               scene: Scene[NodeTag]): Scene[NodeTag] \ {GameEngine.Audio, StageRequested} =
+        checked_ecast(BirdScene.input(BirdInputEvent.MouseButtonPressed(button), scene))
 }
 
 // ========================================================================
@@ -183,11 +187,10 @@ instance ButtonEvent.ButtonHandler[NodeTag] {
     type Aef = { StageRequested }
     redef onButtonPressed(buttonPath: NodePath, _state: NodeTag,
                           scene: Scene[NodeTag]): Scene[NodeTag] \ StageRequested =
-        if (buttonPath == MenuScene.playButtonPath()) {
+        let isPlayPath = buttonPath == MenuScene.playButtonPath()
+                         or buttonPath == GameOverScene.playButtonPath();
+        if (isPlayPath and Game.canStart(scene)) {
             StageRequested.emit(GamePhase.Playing); scene
-        } else if (buttonPath == GameOverScene.playButtonPath()
-                   and GameOverScene.isAnimationFinished(scene)) {
-            StageRequested.emit(GamePhase.Menu); scene
         } else scene
 }
 
@@ -285,6 +288,31 @@ mod Game {
         match Scene.getState(levelManagerName() :: Nil, scene) {
             case Some(NodeTag.LevelManager(data)) => data
             case _ => bug!("level_manager not found")
+        }
+
+    // ========================================================================
+    // フェーズ判定（Scene 構造から導出）
+    // ========================================================================
+
+    /// Scene の構造から現在のゲームフェーズを判定する
+    /// GameOver layer 存在 → GameOver / LevelManager 存在 → Playing / それ以外 → Menu
+    pub def currentPhase(scene: Scene[NodeTag]): GamePhase =
+        match Scene.getEngineNode(GameOverScene.layerPath(), scene) {
+            case Some(_) => GamePhase.GameOver
+            case None    =>
+                match Scene.getEngineNode(levelManagerName() :: Nil, scene) {
+                    case Some(_) => GamePhase.Playing
+                    case None    => GamePhase.Menu
+                }
+        }
+
+    /// ゲーム開始入力を受け付けるか判定する
+    /// Menu / GameOver(アニメ完了後) のとき true
+    pub def canStart(scene: Scene[NodeTag]): Bool =
+        match currentPhase(scene) {
+            case GamePhase.Menu     => true
+            case GamePhase.GameOver => GameOverScene.isAnimationFinished(scene)
+            case GamePhase.Playing  => false
         }
 
     // ========================================================================
@@ -505,7 +533,7 @@ mod Game {
         }
 
     /// 蓄積された遷移要求を読み出し、次の GameState を返す
-    /// Playing/Menu: シーンを作り直す。GameOver: phase だけ切替（scene は BirdStateChanged が組み済み）。
+    /// Playing: シーンを作り直す。GameOver: phase だけ切替（scene は BirdStateChanged が組み済み）。
     def applyPendingPhase(fontAtlas: FontAtlas,
                           state: GameState,
                           scene: Scene[NodeTag],
@@ -517,11 +545,9 @@ mod Game {
             case Some(GamePhase.Playing) =>
                 GameEngine.Audio.playAudio("sfx_swooshing");
                 buildState(fontAtlas, ScoreScene.getBestScore(scene))
-            case Some(GamePhase.Menu) =>
-                buildMenuState(fontAtlas, ScoreScene.getBestScore(scene))
             case Some(GamePhase.GameOver) =>
                 {scene = scene, phase = GamePhase.GameOver}
-            case None =>
+            case _ =>
                 {scene = scene, phase = state#phase}
         }
 
