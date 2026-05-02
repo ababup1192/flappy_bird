@@ -8,7 +8,10 @@
 // 状態を持つ NodeTag（Bird, ScoreLabel, Camera, GameOverAnim）は JSON で指定できないため、
 // 呼び出し側で読み込み後に Scene.setState で差し替えること。
 //
-// 対応ノード型: CanvasLayer / Sprite2D / TextureButton / StaticBody2D
+// Label2D を含むシーンは loadSceneWithFont を使う（FontAtlas が必要）。
+// それ以外は loadScene を使う。
+//
+// 対応ノード型: CanvasLayer / Sprite2D / TextureButton / StaticBody2D / Label2D
 // 対応 tag: Ground / Pipe / PipePart / Coin / BirdArea / NoTag（デフォルト）
 // 対応 collision shape: RectShape2D / CircleShape2D
 
@@ -25,15 +28,31 @@ mod SceneLoader {
     /// JSON のルートが配列なら各要素をルートノードとして addNode、
     /// 単一オブジェクトなら単一ルートノードとして addNode する。
     /// children は addChildAt で再帰的に追加される。
+    /// Label2D を含む JSON では loadSceneWithFont を使うこと（FontAtlas が必須）。
     /// 失敗（読み込み失敗・JSON パースエラー・未対応ノード型・必須キー欠落）時は
     /// bug! でクラッシュする
     pub def loadScene(path: String, scene: Scene[NodeTag]): Scene[NodeTag] \ Fs.FileRead =
+        loadSceneCore(path, None, scene)
+
+    /// FontAtlas 付きで JSON ファイルを読み込む（Label2D を含むシーン用）。
+    /// その他は loadScene と同じ振る舞い
+    pub def loadSceneWithFont(path: String, fontAtlas: FontAtlas,
+                              scene: Scene[NodeTag]): Scene[NodeTag] \ Fs.FileRead =
+        loadSceneCore(path, Some(fontAtlas), scene)
+
+    // ========================================================================
+    // 内部実装（fontAtlas を Option で全体に伝播する）
+    // ========================================================================
+
+    /// 共通実装。fontAtlas が None の場合 Label2D ビルダーは Err を返す
+    def loadSceneCore(path: String, fontAtlas: Option[FontAtlas],
+                      scene: Scene[NodeTag]): Scene[NodeTag] \ Fs.FileRead =
         let content = run { Fs.ReadFile.read(path) } with Fs.ReadFile.runWithFileRead;
         let result = forM (
             text     <- content |> Result.mapErr(e -> "failed to read: ${e}");
             // 末尾改行で flix-json の eoi が失敗するため事前に trim する
             json     <- Json.Parse.parse(String.trim(text)) |> Option.toOk("JSON parse failed");
-            outScene <- addJsonAtTop(json, scene)
+            outScene <- addJsonAtTop(fontAtlas, json, scene)
                 |> Result.mapErr(match JsonError(p, expected) ->
                     "at ${p}: expected ${expected}")
         ) yield outScene;
@@ -48,13 +67,13 @@ mod SceneLoader {
 
     /// JSON ルートを処理する。配列なら各要素を、オブジェクトなら単一ノードを
     /// シーンのルートに追加する
-    def addJsonAtTop(json: Json.JsonElement,
+    def addJsonAtTop(fontAtlas: Option[FontAtlas], json: Json.JsonElement,
                      scene: Scene[NodeTag]): Result[Json.JsonError, Scene[NodeTag]] =
         match json {
-            case JsonObject(_)        => addJsonAt(Nil, json, scene)
+            case JsonObject(_)        => addJsonAt(Nil, fontAtlas, json, scene)
             case JsonArray(arr)       =>
                 List.foldLeft(
-                    (acc, child) -> Result.flatMap(s -> addJsonAt(Nil, child, s), acc),
+                    (acc, child) -> Result.flatMap(s -> addJsonAt(Nil, fontAtlas, child, s), acc),
                     Ok(scene),
                     Vector.toList(arr))
             case _                    => Err(JsonError(Root, Set#{"JsonObject or JsonArray"}))
@@ -62,20 +81,21 @@ mod SceneLoader {
 
     /// 指定された parentPath の子として JSON ノードを追加し、再帰的に children も追加する。
     /// parentPath が空のときはシーンのルートに addNode する
-    def addJsonAt(parentPath: NodePath, json: Json.JsonElement,
+    def addJsonAt(parentPath: NodePath, fontAtlas: Option[FontAtlas],
+                  json: Json.JsonElement,
                   scene: Scene[NodeTag]): Result[Json.JsonError, Scene[NodeTag]] =
         match json {
             case JsonObject(map) =>
                 forM (
                     nodeType   <- (Json.getAtKey(Root, "type", map): Result[Json.JsonError, String]);
                     name       <- (Json.getAtKey(Root, "name", map): Result[Json.JsonError, String]);
-                    engineNode <- buildByType(nodeType, map);
+                    engineNode <- buildByType(nodeType, fontAtlas, map);
                     groups     <- parseGroups(map);
                     outScene   <- {
                         let nodePath = parentPath ::: name :: Nil;
                         let added = addAt(parentPath, name, engineNode, scene)
                             |> applyGroups(nodePath, groups);
-                        addChildren(nodePath, map, added)
+                        addChildren(nodePath, fontAtlas, map, added)
                     }
                 ) yield outScene
             case _ => Err(JsonError(Root, Set#{"JsonObject"}))
@@ -91,13 +111,14 @@ mod SceneLoader {
 
     /// "children" 配列を順に走査して各要素を addJsonAt で追加する。
     /// children キーがなければ scene をそのまま返す
-    def addChildren(parentPath: NodePath, map: Map[String, Json.JsonElement],
+    def addChildren(parentPath: NodePath, fontAtlas: Option[FontAtlas],
+                    map: Map[String, Json.JsonElement],
                     scene: Scene[NodeTag]): Result[Json.JsonError, Scene[NodeTag]] =
         match Map.get("children", map) {
             case None                 => Ok(scene)
             case Some(JsonArray(arr)) =>
                 List.foldLeft(
-                    (acc, child) -> Result.flatMap(s -> addJsonAt(parentPath, child, s), acc),
+                    (acc, child) -> Result.flatMap(s -> addJsonAt(parentPath, fontAtlas, child, s), acc),
                     Ok(scene),
                     Vector.toList(arr))
             case Some(_)              => Err(JsonError(Root, Set#{"JsonArray"}))
@@ -113,13 +134,14 @@ mod SceneLoader {
     // ========================================================================
 
     /// "type" フィールドの値に応じて対応するノードビルダーを呼び出す
-    def buildByType(nodeType: String,
+    def buildByType(nodeType: String, fontAtlas: Option[FontAtlas],
                     map: Map[String, Json.JsonElement]): Result[Json.JsonError, EngineNode[NodeTag]] =
         match nodeType {
             case "CanvasLayer"   => buildCanvasLayer(map)
             case "Sprite2D"      => buildSprite2D(map)
             case "TextureButton" => buildTextureButton(map)
             case "StaticBody2D"  => buildStaticBody2D(map)
+            case "Label2D"       => buildLabel2D(fontAtlas, map)
             case unknown         =>
                 Err(JsonError(Root, Set#{"known node type (got: ${unknown})"}))
         }
@@ -250,6 +272,31 @@ mod SceneLoader {
             shape <- parseShape(map)
         ) yield EngineNode.StaticBody2DWithState(StaticBody2D.make(pos, shape), tag)
 
+    /// Label2D ノードを構築する。
+    /// 必須: "text" / "pos" / "fontSize"
+    /// 任意: "centered" / "visible"
+    /// fontAtlas が None の場合は Err を返す（Label2D は font が必須なため）
+    def buildLabel2D(fontAtlas: Option[FontAtlas],
+                     map: Map[String, Json.JsonElement]): Result[Json.JsonError, EngineNode[NodeTag]] =
+        match fontAtlas {
+            case None => Err(JsonError(Root, Set#{"FontAtlas (loadSceneWithFont required for Label2D)"}))
+            case Some(font) =>
+                forM (
+                    tag         <- parseTag(map);
+                    text        <- (Json.getAtKey(Root, "text", map): Result[Json.JsonError, String]);
+                    pos         <- parseVec2("pos", map);
+                    fontSize    <- (Json.getAtKey(Root, "fontSize", map): Result[Json.JsonError, Float64]);
+                    centeredOpt <- (Json.getAtKeyOpt(Root, "centered", map): Result[Json.JsonError, Option[Bool]]);
+                    visibleOpt  <- (Json.getAtKeyOpt(Root, "visible", map): Result[Json.JsonError, Option[Bool]])
+                ) yield {
+                    let label = Label2D.make(text, font, fontSize)
+                        |> Node2D.setPosition(pos)
+                        |> applyLabelCentered(centeredOpt)
+                        |> applyLabelVisible(visibleOpt);
+                    EngineNode.Label2DWithState(label, tag)
+                }
+        }
+
     // ========================================================================
     // ビルダー用ヘルパー（任意フィールド適用）
     // ========================================================================
@@ -273,5 +320,19 @@ mod SceneLoader {
         match opt {
             case Some(centered) => TextureButton.setCentered(centered, button)
             case None           => button
+        }
+
+    /// 任意の centered を Label2D に適用する（None ならそのまま返す）
+    def applyLabelCentered(opt: Option[Bool], label: Label2D): Label2D =
+        match opt {
+            case Some(centered) => Label2D.setCentered(centered, label)
+            case None           => label
+        }
+
+    /// 任意の visible を Label2D に適用する（None ならそのまま返す）
+    def applyLabelVisible(opt: Option[Bool], label: Label2D): Label2D =
+        match opt {
+            case Some(visible) => CanvasItem.setVisible(visible, label)
+            case None          => label
         }
 }

@@ -15,6 +15,10 @@ def loadedMenuScene(): Scene[NodeTag] \ Fs.FileRead =
 def loadedGroundScene(): Scene[NodeTag] \ Fs.FileRead =
     SceneLoader.loadScene("src/scenes/GroundScene.scene.json", Scene.empty())
 
+/// ScoreScene.scene.json をテスト用に読み込んだ scene を取得する（loadSceneWithFont 経由）
+def loadedScoreScene(): Scene[NodeTag] \ Fs.FileRead =
+    SceneLoader.loadSceneWithFont("src/scenes/ScoreScene.scene.json", testFontAtlas(), Scene.empty())
+
 // ========================================================================
 // 構造テスト
 // ========================================================================
@@ -157,4 +161,44 @@ def testGroundSpriteHasZIndex10(): Unit \ {Assert, Fs.FileRead} =
                 (let Sprite2D.Sprite2D(r) = sprite; r#texture,
                  CanvasItem.getZIndex(sprite)))
         case _ => bug!("ground_0/sprite should be Sprite2D with NoTag")
+    }
+
+// ========================================================================
+// loadSceneWithFont + Label2D ビルダー（ScoreScene.scene.json）
+// ========================================================================
+
+/// ScoreScene.scene.json は hud CanvasLayer + score_label / best_score_label の
+/// 3 ノード構成。score_label は centered=true、best_score_label は visible=false
+@Test
+def testScoreSceneJsonStructure(): Unit \ {Assert, Fs.FileRead} =
+    let scene = loadedScoreScene();
+    Assert.assertEq(
+        expected = (3, true, true, true),
+        (Scene.nodeCount(scene),
+         not Option.isEmpty(Scene.getEngineNode("hud" :: Nil, scene)),
+         not Option.isEmpty(Scene.getEngineNode("hud" :: "score_label" :: Nil, scene)),
+         not Option.isEmpty(Scene.getEngineNode("hud" :: "best_score_label" :: Nil, scene))))
+
+/// score_label は Label2D で text="0"、fontSize=60、centered=true、可視
+@Test
+def testScoreLabelLabel2D(): Unit \ {Assert, Fs.FileRead} =
+    match Scene.getEngineNode("hud" :: "score_label" :: Nil, loadedScoreScene()) {
+        case Some(EngineNode.Label2DWithState(label, NodeTag.NoTag)) =>
+            let Label2D.Label2D(r) = label;
+            Assert.assertEq(
+                expected = ("0", 60.0, true, true, (144.0, 50.0)),
+                (r#text, r#fontSize, r#centered, r#visible,
+                 (r#position#x, r#position#y)))
+        case _ => bug!("score_label should be Label2D with NoTag")
+    }
+
+/// best_score_label は visible=false で読み込まれる
+@Test
+def testBestScoreLabelHiddenByDefault(): Unit \ {Assert, Fs.FileRead} =
+    match Scene.getEngineNode("hud" :: "best_score_label" :: Nil, loadedScoreScene()) {
+        case Some(EngineNode.Label2DWithState(label, NodeTag.NoTag)) =>
+            Assert.assertEq(
+                expected = false,
+                CanvasItem.isVisible(label))
+        case _ => bug!("best_score_label should be Label2D with NoTag")
     }

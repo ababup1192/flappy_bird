@@ -30,32 +30,23 @@ mod ScoreScene {
     /// ベストスコアラベルのノードパス
     pub def bestScoreLabelPath(): NodePath = hudLayerName() :: bestScoreLabelName() :: Nil
 
-    /// スコア用フォントサイズ
-    def scoreFontSize(): Float64 = 60.0
-
-    /// スコアラベルの表示位置（画面上部中央）
-    def scorePosition(): Vec2.Vec2 = {x = 144.0, y = 50.0}
-
     // ========================================================================
     // シーン構築
     // ========================================================================
 
-    /// HUD レイヤーとスコア/ベストスコアラベルをシーンに追加する
-    /// ベストスコアラベルは非表示（データ保持用）
-    pub def addHud(fontAtlas: FontAtlas, bestScore: BestScore, scene: Scene[NodeTag]): Scene[NodeTag] =
-        let layer = CanvasLayer.make(1);
-        let label = Label2D.make("0", fontAtlas, scoreFontSize())
-            |> Label2D.setCentered(true)
-            |> Node2D.setPosition(scorePosition());
-        let bestLabel = Label2D.make("${bestScore}", fontAtlas, scoreFontSize())
-            |> CanvasItem.hide;
-        scene
-            |> Scene.addNode(hudLayerName(),
-                EngineNode.CanvasLayerWithState(layer, NodeTag.NoTag))
-            |> Scene.addChild(hudLayerName(), scoreLabelName(),
-                EngineNode.Label2DWithState(label, NodeTag.ScoreLabel(0)))
-            |> Scene.addChild(hudLayerName(), bestScoreLabelName(),
-                EngineNode.Label2DWithState(bestLabel, NodeTag.BestScoreLabel(bestScore)))
+    /// HUD シーン定義 JSON のパス
+    def sceneJsonPath(): String = "src/scenes/ScoreScene.scene.json"
+
+    /// HUD レイヤーとスコア/ベストスコアラベルをシーンに追加する。
+    /// 構造は ScoreScene.scene.json から読み込み、ScoreLabel/BestScoreLabel タグと
+    /// ベストスコアの初期表示値は読み込み後に setState/setText で適用する
+    pub def addHud(fontAtlas: FontAtlas, bestScore: BestScore,
+                   scene: Scene[NodeTag]): Scene[NodeTag] \ Fs.FileRead =
+        SceneLoader.loadSceneWithFont(sceneJsonPath(), fontAtlas, scene)
+            |> Scene.setState(scoreLabelPath(), NodeTag.ScoreLabel(0))
+            |> Scene.setState(bestScoreLabelPath(), NodeTag.BestScoreLabel(bestScore))
+            |> Scene.mapEngineNode(bestScoreLabelPath(),
+                EngineNode.mapLabel2D(Label2D.setText("${bestScore}")))
 
     // ========================================================================
     // 取得
