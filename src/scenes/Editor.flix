@@ -116,13 +116,15 @@ mod Editor {
     /// jsonPath: 書き戻し対象の scene.json ファイルパス
     /// nodePath: シーン内の階層パス
     /// width / height: 画面上で見える矩形のサイズ（ピクセル単位）
-    /// centered: 矩形の原点が中心か左上か
+    /// topLeftOffset: ノード position から矩形の左上までの相対オフセット。
+    ///                Sprite2D centered=true なら (-w/2, -h/2)、Label2D centered=true なら
+    ///                (-w/2, 0)（縦方向はベースライン基準）、centered=false ならゼロ
     type alias EditableEntry = {
         jsonPath = String,
         nodePath = NodePath,
         width = Float64,
         height = Float64,
-        centered = Bool
+        topLeftOffset = Vec2.Vec2
     }
 
     /// 与えられたシーンを走査し、編集可能ノード（Sprite2D / TextureButton）を抽出する。
@@ -137,7 +139,7 @@ mod Editor {
                     case None        => acc
                 }, Nil)
 
-    /// 1 パス分の EditableEntry を構築する。Sprite2D / TextureButton 以外は None。
+    /// 1 パス分の EditableEntry を構築する。Sprite2D / TextureButton / Label2D 以外は None。
     /// rootJsonIndex に未登録のルートに属するノードも None
     def buildEntry(rootJsonIndex: Map[NodeName, String], path: NodePath,
                    scene: Scene[NodeTag]): Option[EditableEntry] \ GameEngine.Game =
@@ -155,31 +157,68 @@ mod Editor {
                                     nodePath = path,
                                     width = rect#size#x,
                                     height = rect#size#y,
-                                    centered = rect#centered
+                                    topLeftOffset = rect#topLeftOffset
                                 })
                         }
                 }
         }
 
-    /// ノードの表示サイズと centered 属性を返す（編集対象でなければ None）。
-    /// Sprite2D は texture サイズ × scale から計算、TextureButton は size 値そのものを使う
+    /// ノードの表示サイズと topLeftOffset を返す（編集対象でなければ None）。
+    /// Sprite2D: texture サイズ × scale。中央基準なら (-w/2, -h/2) 分シフト
+    /// TextureButton: size 値そのもの
+    /// Label2D: フォントメトリクスから幅・高さを計算。centered=true は X 方向のみセンタリング
     def rectInfoOf(engineNode: EngineNode[NodeTag]):
-            Option[{size = Vec2.Vec2, centered = Bool}] \ GameEngine.Game =
+            Option[{size = Vec2.Vec2, topLeftOffset = Vec2.Vec2}] \ GameEngine.Game =
         match engineNode {
             case EngineNode.Sprite2DWithState(sprite, _) =>
                 let Sprite2D.Sprite2D(record) = sprite;
                 match GameEngine.Game.getTextureInfo(record#texture) {
                     case None => None
                     case Some(info) =>
-                        Some({size = {x = info#width * record#scale#x,
-                                      y = info#height * record#scale#y},
-                              centered = record#centered})
+                        let size = {x = info#width * record#scale#x,
+                                    y = info#height * record#scale#y};
+                        Some({size = size,
+                              topLeftOffset = boxTopLeftOffset(record#centered, size)})
                 }
             case EngineNode.TextureButtonWithState(btn, _) =>
-                Some({size = TextureButton.getSize(btn),
-                      centered = TextureButton.isCentered(btn)})
+                let size = TextureButton.getSize(btn);
+                Some({size = size,
+                      topLeftOffset = boxTopLeftOffset(TextureButton.isCentered(btn), size)})
+            case EngineNode.Label2DWithState(label, _) =>
+                Some(labelRectInfo(label))
             case _ => None
         }
+
+    /// Sprite2D / TextureButton の topLeftOffset 計算（中央基準なら半サイズ分マイナス）
+    def boxTopLeftOffset(centered: Bool, size: Vec2.Vec2): Vec2.Vec2 =
+        if (centered) {x = -size#x / 2.0, y = -size#y / 2.0}
+        else {x = 0.0, y = 0.0}
+
+    /// Label2D の表示矩形を計算する。FontAtlas のグリフ advance 合計から幅、
+    /// ascent + descent から高さを出す。改行 (\n) があれば最も長い行を採用 + 行数分の高さ
+    def labelRectInfo(label: Label2D): {size = Vec2.Vec2, topLeftOffset = Vec2.Vec2} =
+        let Label2D.Label2D(record) = label;
+        let atlas = record#fontAtlas;
+        let scale = record#fontSize / atlas#fontSize;
+        let lines = TextLayout.splitLines(record#text);
+        let lineWidths = List.map(lineChars -> {
+            let advances = List.map(ch -> {
+                let cp = TextLayout.charToCodePoint(ch);
+                match Map.get(cp, atlas#glyphs) {
+                    case Some(glyphMetrics) => glyphMetrics#advance
+                    case None => 0.0
+                }
+            }, lineChars);
+            TextLayout.totalAdvance(advances) * scale
+        }, lines);
+        let width = List.foldLeft(Float64.max, 0.0, lineWidths);
+        let lineHeight = (atlas#ascent + atlas#descent + atlas#lineGap) * scale;
+        let height = lineHeight * Int32.toFloat64(Int32.max(1, List.length(lines)));
+        // Label2D の centered は X 方向のみ。Y は globalPos がベースライン上端
+        let topLeftOffset = if (record#centered)
+            {x = -width / 2.0, y = 0.0}
+        else {x = 0.0, y = 0.0};
+        {size = {x = width, y = height}, topLeftOffset = topLeftOffset}
 
     // ========================================================================
     // メインループから呼ぶ API
@@ -277,22 +316,27 @@ mod Editor {
             Option[(EditableEntry, Vec2.Vec2)] \ GameEngine.Game =
         let hits = collectEditable(rootJsonIndex, scene) |> List.filterMap(entry -> {
             let globalPos = Scene.globalPositionAt(entry#nodePath, scene);
-            let bbox = makeBBox(globalPos, entry#width, entry#height, entry#centered);
+            let bbox = makeBBox(globalPos, entry);
             if (Rect2.hasPoint(mousePos, bbox)) Some((entry, globalPos))
             else None
         });
         List.last(hits)
 
-    /// ドラッグ中: マウスの移動量に応じてノードのグローバル位置を更新する
+    /// ドラッグ中: マウスの移動量に応じてノードのグローバル位置を更新する。
+    /// ピクセル単位に整数スナップして「カクカク」動かす（drop 時の保存値とも一致する）
     def applyDrag(mousePos: Vec2.Vec2, stateData: EditorStateData,
                   scene: Scene[NodeTag]): Scene[NodeTag] =
         match (stateData#selected, stateData#dragOrigin, stateData#nodeOrigin) {
             case (Some((_, nodePath)), Some(dragOrigin), Some(nodeOrigin)) =>
                 let delta = Vec2.sub(mousePos, dragOrigin);
-                let newGlobalPos = Vec2.add(nodeOrigin, delta);
+                let newGlobalPos = snapVec2(Vec2.add(nodeOrigin, delta));
                 Scene.setGlobalPositionAt(nodePath, newGlobalPos, scene)
             case _ => scene
         }
+
+    /// Vec2 を整数ピクセルに丸める（HotReload 後の JSON も整数値で残るようにするため）
+    def snapVec2(v: Vec2.Vec2): Vec2.Vec2 =
+        {x = Float64.round(v#x), y = Float64.round(v#y)}
 
     /// ドロップ: 現在のシーン上のノード位置を JSON に書き戻し、ドラッグ状態を解除する。
     /// 書き戻し対象は「ローカル位置」（JSON が pos として持つのはローカル座標のため）
@@ -315,13 +359,10 @@ mod Editor {
             case None => (stateData, scene)
         }
 
-    /// グローバル中心 or 左上座標とサイズから Rect2 を作る
-    def makeBBox(refPos: Vec2.Vec2, width: Float64, height: Float64,
-                 centered: Bool): Rect2.Rect2 =
-        let topLeft = if (centered)
-            {x = refPos#x - width / 2.0, y = refPos#y - height / 2.0}
-        else refPos;
-        {position = topLeft, size = {x = width, y = height}}
+    /// グローバル位置と EditableEntry から表示矩形 Rect2 を作る
+    def makeBBox(refPos: Vec2.Vec2, entry: EditableEntry): Rect2.Rect2 =
+        let topLeft = Vec2.add(refPos, entry#topLeftOffset);
+        {position = topLeft, size = {x = entry#width, y = entry#height}}
 
     // ========================================================================
     // オーバーレイ構築
@@ -353,10 +394,7 @@ mod Editor {
                     case None => scene
                     case Some(entry) =>
                         let refPos = Scene.globalPositionAt(nodePath, scene);
-                        let topLeft = if (entry#centered)
-                            {x = refPos#x - entry#width / 2.0,
-                             y = refPos#y - entry#height / 2.0}
-                        else refPos;
+                        let topLeft = Vec2.add(refPos, entry#topLeftOffset);
                         addBoxLines(topLeft, entry#width, entry#height, scene)
                 }
         }
