@@ -72,6 +72,7 @@ mod GameEngine {
         case Enter
         case Space
         case Escape
+        case F1
     }
 
     /// Key の全バリアント。InputEvent などのイベント駆動入力で
@@ -79,7 +80,7 @@ mod GameEngine {
     pub def allKeys(): List[Key] =
         Key.W :: Key.A :: Key.S :: Key.D ::
         Key.Up :: Key.Down :: Key.Left :: Key.Right ::
-        Key.Enter :: Key.Space :: Key.Escape :: Nil
+        Key.Enter :: Key.Space :: Key.Escape :: Key.F1 :: Nil
 
     /// マウスボタン
     pub enum MouseButton with Eq, Order, ToString {

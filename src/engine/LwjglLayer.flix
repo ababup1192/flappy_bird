@@ -170,6 +170,7 @@ mod LwjglLayer {
         case GameEngine.Key.Enter  => 257
         case GameEngine.Key.Space  => 32
         case GameEngine.Key.Escape => 256
+        case GameEngine.Key.F1     => 290
     }
 
     // ========================================================================

@@ -293,9 +293,10 @@ mod Game {
     /// default 節で非ブロッキング受信し、シグナル到達フレームで現在の Phase を再構築する
     pub def start(fontAtlas: FontAtlas):
                   Unit \ {GameEngine.Game, GameEngine.Audio, Math.Random, Fs.FileRead,
-                          Chan, NonDet, IO, Fs.Glob, Fs.ModificationTime} =
+                          Fs.FileWrite, Chan, NonDet, IO, Fs.Glob, Fs.ModificationTime} =
         region rc {
             let phaseRef: Ref[GamePhase, rc] = Ref.fresh(rc, GamePhase.Menu);
+            let editorRef: Ref[Editor.EditorStateData, rc] = Ref.fresh(rc, Editor.initialState());
             let reloadRx = HotReload.startWatcher();
             run {
                 gameLoop(fontAtlas, GamePhase.Menu, reloadRx, buildMenuScene(fontAtlas, 0))
@@ -320,6 +321,9 @@ mod Game {
                 def ground(scene, k) = k(GroundScene.spawnRecycledGround(scene))
                 def pipe(scene, k) =
                     k(PipeScene.spawnRecycledPair(ScoreScene.getScore(scene), scene))
+            } with handler Editor.EditorState {
+                def get(k) = k(Ref.get(editorRef))
+                def put(stateData, k) = { Ref.put(stateData, editorRef); k() }
             }
         }
 
@@ -348,7 +352,8 @@ mod Game {
     def gameLoop(fontAtlas: FontAtlas, previousPhase: GamePhase,
                  reloadRx: Receiver[Unit], scene: Scene[NodeTag]):
                  Unit \ {GameEngine.Game, GameEngine.Audio, Math.Random, Fs.FileRead,
-                         Chan, NonDet, BirdStateChanged, Phase, Recycle} =
+                         Fs.FileWrite, Chan, NonDet, BirdStateChanged, Phase, Recycle,
+                         Editor.EditorState} =
         if (GameEngine.Game.shouldClose() or
             GameEngine.Game.isKeyPressed(GameEngine.Key.Escape)) ()
         else {
@@ -358,7 +363,8 @@ mod Game {
                 |> GameEngine.physicsProcess(dt, false, PhysicsStep.defaultGravity())
                 |> GameEngine.handleInput
                 |> GameEngine.handleButtons
-                |> GameEngine.handleCollisions;
+                |> GameEngine.handleCollisions
+                |> Editor.handleInput;
             let currentPhase = Phase.get();
             // hot reload: GameOver 中は overlay 重複を避けるためスキップ
             let reloadSignal = HotReload.pollReload(reloadRx);
@@ -366,7 +372,9 @@ mod Game {
             let nextScene = if (currentPhase != previousPhase or reloadRequested)
                                 applyPhaseChange(currentPhase, fontAtlas, updatedScene)
                             else updatedScene;
-            GameEngine.render(nextScene);
+            // エディタオーバーレイを合成して描画する。次フレームには引き継がない
+            let renderedScene = Editor.applyOverlay(fontAtlas, nextScene);
+            GameEngine.render(renderedScene);
             gameLoop(fontAtlas, currentPhase, reloadRx, nextScene)
         }
 }

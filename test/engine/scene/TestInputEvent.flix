@@ -211,9 +211,10 @@ def testHandleInputEmptyPrevState(): Unit \ Assert =
 @Test
 def testAllKeysContainsAll(): Unit \ Assert =
     let keys = GameEngine.allKeys();
-    Assert.assertEq(expected = 11, List.length(keys));
+    Assert.assertEq(expected = 12, List.length(keys));
     Assert.assertTrue(List.memberOf(GameEngine.Key.W, keys));
-    Assert.assertTrue(List.memberOf(GameEngine.Key.Escape, keys))
+    Assert.assertTrue(List.memberOf(GameEngine.Key.Escape, keys));
+    Assert.assertTrue(List.memberOf(GameEngine.Key.F1, keys))
 
 // ========================================================================
 // currentMouseButtons / allMouseButtons
