@@ -19,7 +19,7 @@ def withMockAudio(f: Unit -> a \ GameEngine.Audio): a =
     }
 
 /// GameEngine.Audio + BirdStateChanged のモックハンドラ
-/// setBirdState を経由するテスト用。BirdStateChanged は scene をそのまま返す（shake 無効）
+/// handleHit / handleGrounded を経由するテスト用。BirdStateChanged は scene をそのまま返す（shake 無効）
 def withMockAudioAndState(f: Unit -> a \ {GameEngine.Audio, BirdStateChanged}): a =
     run {
         run f() with handler GameEngine.Audio {
@@ -450,16 +450,16 @@ def testRecycleGroundsNewTilePosition(): Unit \ Assert =
     Assert.assertEq(expected = (840.0, 456.0), vecToTuple(pos))
 
 // ========================================================================
-// Phase 2: 鳥の状態遷移 — setBirdState
+// Phase 2: 鳥の状態遷移 — handleHit / handleGrounded
 // ========================================================================
 
 /// Grounded 状態にすると速度がゼロになること
 @Test
-def testSetBirdStateGroundedStopsVelocity(): Unit \ Assert =
+def testHandleGroundedStopsVelocity(): Unit \ Assert =
     let scene = withMockAudioAndState(() ->
         testScene()
             |> runFlap
-            |> BirdScene.setBirdState(BirdState.Grounded));
+            |> BirdScene.handleGrounded);
     match Scene.getEngineNode("bird" :: Nil, scene) {
         case Some(EngineNode.RigidBody2DWithState(body, _)) =>
             Assert.assertEq(expected = (0.0, 0.0),
@@ -469,10 +469,10 @@ def testSetBirdStateGroundedStopsVelocity(): Unit \ Assert =
 
 /// Grounded 状態にすると重力が無効になること
 @Test
-def testSetBirdStateGroundedDisablesGravity(): Unit \ Assert =
+def testHandleGroundedDisablesGravity(): Unit \ Assert =
     let scene = withMockAudioAndState(() ->
         testScene()
-            |> BirdScene.setBirdState(BirdState.Grounded));
+            |> BirdScene.handleGrounded);
     match Scene.getEngineNode("bird" :: Nil, scene) {
         case Some(EngineNode.RigidBody2DWithState(body, _)) =>
             Assert.assertEq(expected = 0.0, RigidBody2D.getGravityScale(body))
@@ -481,18 +481,18 @@ def testSetBirdStateGroundedDisablesGravity(): Unit \ Assert =
 
 /// Grounded 状態にすると BirdData の state が Grounded になること
 @Test
-def testSetBirdStateGroundedUpdatesData(): Unit \ Assert =
+def testHandleGroundedUpdatesData(): Unit \ Assert =
     let scene = withMockAudioAndState(() ->
         testScene()
-            |> BirdScene.setBirdState(BirdState.Grounded));
+            |> BirdScene.handleGrounded);
     Assert.assertEq(expected = BirdState.Grounded, BirdScene.getBirdData(scene)#state)
 
 /// Hit 状態にすると angular velocity が 2.0 になること（落下回転演出）
 @Test
-def testSetBirdStateHitSetsAngularVelocity(): Unit \ Assert =
+def testHandleHitSetsAngularVelocity(): Unit \ Assert =
     let scene = withMockAudioAndState(() ->
         testScene()
-            |> BirdScene.setBirdState(BirdState.Hit));
+            |> BirdScene.handleHit);
     match Scene.getEngineNode("bird" :: Nil, scene) {
         case Some(EngineNode.RigidBody2DWithState(body, _)) =>
             Assert.assertEq(expected = 2.0, RigidBody2D.getAngularVelocity(body))
@@ -753,7 +753,7 @@ def testBirdPipeCollisionHitNoChange(): Unit \ Assert =
     let pipePath = "pipe_0_top" :: Nil;
     let scene = withMockAudioAndState(() ->
         testScene()
-            |> BirdScene.setBirdState(BirdState.Hit)
+            |> BirdScene.handleHit
             |> Game.onBirdHitPipe(pipePath = pipePath));
     Assert.assertEq(expected = BirdState.Hit, BirdScene.getBirdData(scene)#state)
 
@@ -763,7 +763,7 @@ def testBirdPipeCollisionGroundedNoChange(): Unit \ Assert =
     let pipePath = "pipe_0_top" :: Nil;
     let scene = withMockAudioAndState(() ->
         testScene()
-            |> BirdScene.setBirdState(BirdState.Grounded)
+            |> BirdScene.handleGrounded
             |> Game.onBirdHitPipe(pipePath = pipePath));
     Assert.assertEq(expected = BirdState.Grounded, BirdScene.getBirdData(scene)#state)
 

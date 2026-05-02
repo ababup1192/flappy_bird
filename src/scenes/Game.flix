@@ -134,6 +134,13 @@ instance Node[NodeTag] {
             case EngineNode.Sprite2DWithState(sprite, NodeTag.LevelManager(levelData)) =>
                 let (newData, newScene) = Game.levelManagerProcess(levelData, scene);
                 (EngineNode.Sprite2DWithState(sprite, NodeTag.LevelManager(newData)), newScene)
+            case EngineNode.CanvasLayerWithState(layer, NodeTag.GameOverAnim(_)) =>
+                let newScene = GameOverScene.updateAnimation(delta, scene);
+                let newState = match Scene.getState(GameOverScene.layerPath(), newScene) {
+                    case Some(tag) => tag
+                    case _         => NodeTag.GameOverAnim({elapsed = 0.0})
+                };
+                checked_ecast((EngineNode.CanvasLayerWithState(layer, newState), newScene))
             case _ => checked_ecast((node, scene))
         }
 
@@ -363,7 +370,7 @@ mod Game {
 
     /// 鳥が地面に衝突したときの処理
     /// 鳥を Grounded 状態にする。地面への押し戻しは PhysicsStep.resolveStaticCollisions が自動処理。
-    /// SE と camera shake は BirdScene.setBirdState 側で発火される（bird.gd GroundedState._init 準拠）
+    /// SE と camera shake は BirdScene.handleGrounded 側で発火される（bird.gd GroundedState._init 準拠）
     pub def onBirdHitGround(scene: Scene[NodeTag]): Scene[NodeTag] \ {GameEngine.Audio, BirdStateChanged} =
         let birdData = BirdScene.getBirdData(scene);
         let flappingOrHit = match birdData#state {
@@ -371,12 +378,12 @@ mod Game {
             case BirdState.Hit      => true
             case _                  => false
         };
-        if(flappingOrHit) BirdScene.setBirdState(BirdState.Grounded, scene)
+        if(flappingOrHit) BirdScene.handleGrounded(scene)
         else scene
 
     /// 鳥がパイプに衝突したときの処理
     /// Flapping → Hit に遷移し、鳥をパイプの左端まで押し戻す
-    /// SE と camera shake は BirdScene.setBirdState 側で発火される（bird.gd HitState._init 準拠）
+    /// SE と camera shake は BirdScene.handleHit 側で発火される（bird.gd HitState._init 準拠）
     pub def onBirdHitPipe(pipePath: {pipePath = NodePath}, scene: Scene[NodeTag]): Scene[NodeTag] \ {GameEngine.Audio, BirdStateChanged} =
         let birdData = BirdScene.getBirdData(scene);
         let flapping = match birdData#state {
@@ -386,7 +393,7 @@ mod Game {
         if(flapping) {
             let pipeX = Scene.globalPositionAt(pipePath#pipePath, scene)#x;
             scene
-                |> BirdScene.setBirdState(BirdState.Hit)
+                |> BirdScene.handleHit
                 |> pushBirdOutOfPipe(pipeX)
         } else scene
 
@@ -514,13 +521,12 @@ mod Game {
                     }
                 case GamePhase.GameOver =>
                     let updatedScene = frameScene |> engineUpdate(dt);
-                    let animScene = GameOverScene.updateAnimation(dt, updatedScene);
-                    let animFinished = GameOverScene.isAnimationFinished(animScene);
-                    if (animFinished and GameOverScene.isPlayButtonPressed(animScene)) {
-                        let bestScore = ScoreScene.getBestScore(animScene);
+                    let animFinished = GameOverScene.isAnimationFinished(updatedScene);
+                    if (animFinished and GameOverScene.isPlayButtonPressed(updatedScene)) {
+                        let bestScore = ScoreScene.getBestScore(updatedScene);
                         buildMenuState(fontAtlas, bestScore)
                     } else {
-                        {scene = animScene, phase = GamePhase.GameOver}
+                        {scene = updatedScene, phase = GamePhase.GameOver}
                     }
             };
             GameEngine.render(nextState#scene);

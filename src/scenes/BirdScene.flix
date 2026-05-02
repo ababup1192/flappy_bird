@@ -33,7 +33,7 @@ pub enum BirdInputEvent with Eq, ToString {
 }
 
 /// 鳥の状態変化イベント（bird.gd の `state_changed` シグナル相当）
-/// setBirdState 内で新状態と現在の Scene を emit し、ハンドラ側で
+/// handleHit / handleGrounded 内で新状態と現在の Scene を emit し、ハンドラ側で
 /// カメラシェイク等の副作用を行ってから新しい Scene を返す。
 pub eff BirdStateChanged {
     def emit(newState: BirdState, scene: Scene[NodeTag]): Scene[NodeTag]
@@ -198,12 +198,12 @@ mod BirdScene {
     /// GroundedState.update(delta) — bird.gd: 何もしない（着地後は完全停止）
     def groundedUpdate(body: RigidBody2D): RigidBody2D = body
 
-    /// xVelocity は呼び出し側が指定する:
-    ///   - input / ready: 現在の vel#x を渡し x を保持
-    ///   - setBirdState(Flapping): birdData#speed を渡し x を再設定
-    def flap(xVelocity: Float64, body: RigidBody2D): RigidBody2D =
+    /// bird.gd `flap()` 相当: y velocity を flapVelocityY、angular velocity を flapAngularVelocity に上書き
+    /// x velocity は現在値を保持する（input / ready 両方ともこの挙動でよい）
+    def flap(body: RigidBody2D): RigidBody2D =
+        let vel = RigidBody2D.getLinearVelocity(body);
         body
-            |> RigidBody2D.setLinearVelocity({x = xVelocity, y = flapVelocityY()})
+            |> RigidBody2D.setLinearVelocity({x = vel#x, y = flapVelocityY()})
             |> RigidBody2D.setAngularVelocity(flapAngularVelocity())
 
     /// physicsProcess コールバック: bird.gd の `_physics_process(delta) → state.update(delta)` の Flix 移植
@@ -232,9 +232,7 @@ mod BirdScene {
         match node {
             case EngineNode.RigidBody2DWithState(body, NodeTag.Bird(birdData)) =>
                 if (birdData#state == BirdState.Flapping) {
-                    let vel = RigidBody2D.getLinearVelocity(body);
-                    let newBody = body |> flap(vel#x);
-                    (EngineNode.RigidBody2DWithState(newBody, NodeTag.Bird(birdData)), scene)
+                    (EngineNode.RigidBody2DWithState(flap(body), NodeTag.Bird(birdData)), scene)
                 } else {
                     (node, scene)
                 }
@@ -254,9 +252,7 @@ mod BirdScene {
             case BirdState.Flapping =>
                 if (isFlapAction) {
                     GameEngine.Audio.playAudio("sfx_wing");
-                    scene |> mapBirdBody((body, birdData) ->
-                        let vel = RigidBody2D.getLinearVelocity(body);
-                        (body |> flap(vel#x), birdData))
+                    scene |> mapBirdBody((body, birdData) -> (flap(body), birdData))
                 } else scene
             case _ => scene
         }
@@ -265,55 +261,31 @@ mod BirdScene {
     // 状態遷移
     // ========================================================================
 
-    /// 鳥の状態を変更し、状態に応じた物理パラメータと SE を設定する
-    /// bird.gd の `set_state(new_state)` + 各 XxxState._init / exit の責務を集約
-    ///
-    /// Flying:   重力無効、x 速度=birdData#speed（メニュー画面のボビング用）
-    /// Flapping: 重力復元、x 速度=birdData#speed、初回 flap (y=flapVelocityY, angVel=flapAngularVelocity, sfx_wing)
-    /// Hit:      横移動停止、回転加速（sfx_hit + sfx_die）
-    /// Grounded: 停止（速度ゼロ、重力無効）。直前状態が Hit 以外なら sfx_hit
-    pub def setBirdState(newState: BirdState, scene: Scene[NodeTag]): Scene[NodeTag] \ {GameEngine.Audio, BirdStateChanged} =
-        // GameEngine.Audio
-        match newState {
-            case BirdState.Flapping =>
-                GameEngine.Audio.playAudio("sfx_wing")
-            case BirdState.Hit =>
-                GameEngine.Audio.playAudio("sfx_hit");
-                GameEngine.Audio.playAudio("sfx_die")
-            case BirdState.Grounded =>
-                if (getBirdData(scene)#state != BirdState.Hit)
-                    GameEngine.Audio.playAudio("sfx_hit")
-                else ()
-            case BirdState.Flying => ()
-        };
-
+    /// 鳥を Hit 状態に遷移させる（bird.gd `HitState._init` 相当）
+    /// 横移動停止、回転加速（sfx_hit + sfx_die）
+    pub def handleHit(scene: Scene[NodeTag]): Scene[NodeTag] \ {GameEngine.Audio, BirdStateChanged} =
+        GameEngine.Audio.playAudio("sfx_hit");
+        GameEngine.Audio.playAudio("sfx_die");
         let updatedScene = scene |> mapBirdBody((body, birdData) ->
-            let updatedData = {state = newState | birdData};
-            match newState {
-                case BirdState.Flying =>
-                    let vel = RigidBody2D.getLinearVelocity(body);
-                    (body
-                        |> RigidBody2D.setLinearVelocity({x = birdData#speed, y = vel#y})
-                        |> RigidBody2D.setGravityScale(0.0),
-                     updatedData)
-                case BirdState.Flapping =>
-                    (body
-                        |> RigidBody2D.setGravityScale(birdGravityScale())
-                        |> flap(birdData#speed),
-                     updatedData)
-                case BirdState.Hit =>
-                    (body
-                        |> RigidBody2D.setLinearVelocity(Vec2.zero())
-                        |> RigidBody2D.setAngularVelocity(2.0),
-                     updatedData)
-                case BirdState.Grounded =>
-                    (body
-                        |> RigidBody2D.setLinearVelocity(Vec2.zero())
-                        |> RigidBody2D.setAngularVelocity(0.0)
-                        |> RigidBody2D.setGravityScale(0.0),
-                     updatedData)
-            });
-        BirdStateChanged.emit(newState, updatedScene)
+            (body
+                |> RigidBody2D.setLinearVelocity(Vec2.zero())
+                |> RigidBody2D.setAngularVelocity(2.0),
+             {state = BirdState.Hit | birdData}));
+        BirdStateChanged.emit(BirdState.Hit, updatedScene)
+
+    /// 鳥を Grounded 状態に遷移させる（bird.gd `GroundedState._init` 相当）
+    /// 停止（速度ゼロ、重力無効）。直前状態が Hit 以外なら sfx_hit を再生
+    pub def handleGrounded(scene: Scene[NodeTag]): Scene[NodeTag] \ {GameEngine.Audio, BirdStateChanged} =
+        if (getBirdData(scene)#state != BirdState.Hit)
+            GameEngine.Audio.playAudio("sfx_hit")
+        else ();
+        let updatedScene = scene |> mapBirdBody((body, birdData) ->
+            (body
+                |> RigidBody2D.setLinearVelocity(Vec2.zero())
+                |> RigidBody2D.setAngularVelocity(0.0)
+                |> RigidBody2D.setGravityScale(0.0),
+             {state = BirdState.Grounded | birdData}));
+        BirdStateChanged.emit(BirdState.Grounded, updatedScene)
 
     // ========================================================================
     // ヘルパー: RigidBody2D と BirdData の変換・取得
