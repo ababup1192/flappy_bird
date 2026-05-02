@@ -311,6 +311,85 @@ def testClampRotationKeepsAngularVelocityWhenRising(): Unit \ Assert =
     }
 
 // ========================================================================
+// Y クランプ: 画面上端で鳥が止まる（本家 Flappy Bird 準拠の独自追加）
+// ========================================================================
+
+/// Y < 0 で鳥が画面上端にクランプされる
+@Test
+def testFlappingClampsCeilingPosition(): Unit \ Assert =
+    let scene = testScene()
+        |> BirdScene.mapBirdBody((body, birdData) ->
+            (Node2D.setPosition({x = 144.0, y = -20.0}, body), birdData))
+        |> runBirdPhysicsProcess;
+    match Scene.getEngineNode("bird" :: Nil, scene) {
+        case Some(EngineNode.RigidBody2DWithState(body, _)) =>
+            Assert.assertEq(expected = 0.0, Node2D.getPosition(body)#y)
+        case _ => bug!("bird not found")
+    }
+
+/// 画面上端到達時に上向き速度（vel.y < 0）はゼロにリセットされる
+@Test
+def testFlappingClampsCeilingZeroesUpwardVelocity(): Unit \ Assert =
+    let scene = testScene()
+        |> BirdScene.mapBirdBody((body, birdData) ->
+            (body |> Node2D.setPosition({x = 144.0, y = -20.0})
+                  |> RigidBody2D.setLinearVelocity({x = 100.0, y = -300.0}),
+             birdData))
+        |> runBirdPhysicsProcess;
+    match Scene.getEngineNode("bird" :: Nil, scene) {
+        case Some(EngineNode.RigidBody2DWithState(body, _)) =>
+            Assert.assertEq(expected = 0.0, RigidBody2D.getLinearVelocity(body)#y)
+        case _ => bug!("bird not found")
+    }
+
+/// 画面上端到達時でも横方向速度は保持される
+@Test
+def testFlappingClampsCeilingKeepsHorizontalVelocity(): Unit \ Assert =
+    let scene = testScene()
+        |> BirdScene.mapBirdBody((body, birdData) ->
+            (body |> Node2D.setPosition({x = 144.0, y = -20.0})
+                  |> RigidBody2D.setLinearVelocity({x = 100.0, y = -300.0}),
+             birdData))
+        |> runBirdPhysicsProcess;
+    match Scene.getEngineNode("bird" :: Nil, scene) {
+        case Some(EngineNode.RigidBody2DWithState(body, _)) =>
+            Assert.assertEq(expected = 100.0, RigidBody2D.getLinearVelocity(body)#x)
+        case _ => bug!("bird not found")
+    }
+
+/// 画面上端到達時、下向き速度（vel.y > 0）は保持される（上向きのみゼロ化）
+@Test
+def testFlappingClampsCeilingKeepsDownwardVelocity(): Unit \ Assert =
+    let scene = testScene()
+        |> BirdScene.mapBirdBody((body, birdData) ->
+            (body |> Node2D.setPosition({x = 144.0, y = -20.0})
+                  |> RigidBody2D.setLinearVelocity({x = 100.0, y = 50.0}),
+             birdData))
+        |> runBirdPhysicsProcess;
+    match Scene.getEngineNode("bird" :: Nil, scene) {
+        case Some(EngineNode.RigidBody2DWithState(body, _)) =>
+            Assert.assertEq(expected = 50.0, RigidBody2D.getLinearVelocity(body)#y)
+        case _ => bug!("bird not found")
+    }
+
+/// Y >= 0 ならクランプされない（位置・速度ともに保持）
+@Test
+def testFlappingNoClampWhenBelowCeiling(): Unit \ Assert =
+    let scene = testScene()
+        |> BirdScene.mapBirdBody((body, birdData) ->
+            (body |> Node2D.setPosition({x = 144.0, y = 100.0})
+                  |> RigidBody2D.setLinearVelocity({x = 100.0, y = -300.0}),
+             birdData))
+        |> runBirdPhysicsProcess;
+    match Scene.getEngineNode("bird" :: Nil, scene) {
+        case Some(EngineNode.RigidBody2DWithState(body, _)) =>
+            Assert.assertEq(
+                expected = (100.0, -300.0),
+                vecToTuple(RigidBody2D.getLinearVelocity(body)))
+        case _ => bug!("bird not found")
+    }
+
+// ========================================================================
 // 統合: フラップ → 物理積分 → 回転クランプ
 // ========================================================================
 

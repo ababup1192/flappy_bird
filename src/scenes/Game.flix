@@ -30,9 +30,6 @@ pub type alias Score = Int32
 /// ベストスコア値の型エイリアス
 pub type alias BestScore = Int32
 
-/// カメラシェイクの残り時間と強度
-pub type alias ShakeData = {shakeRemaining = Float64, shakeIntensity = Float64}
-
 /// ゲームオーバーアニメーションの経過時間
 pub type alias GameOverAnimData = {elapsed = Float64}
 
@@ -55,7 +52,7 @@ pub enum NodeTag {
     /// ベストスコアラベルに付与。セッション中のベストスコアを保持する
     case BestScoreLabel(BestScore)
     /// カメラシェイク状態を保持する
-    case CameraShake(ShakeData)
+    case CameraShake(CameraScene.ShakeData)
     /// ゲームオーバーアニメーション状態を保持する
     case GameOverAnim(GameOverAnimData)
     /// Play ボタンノードに付与。ButtonHandler が path で識別して StageRequested を発火する
@@ -91,33 +88,13 @@ instance Node[NodeTag] {
             case _ => (node, scene)
         }
 
-    // Camera2D: 追従+シェイク / Ground & Coin: 画面外で自殺 / GameOverAnim: 自走
+    // Camera2D: CameraScene に委譲 / Ground & Coin: 画面外で自殺 / GameOverAnim: 自走
     // Bird は bird.gd に倣い _process を使わない（physicsProcess のみ）
     redef process(delta: Float64, node: EngineNode[NodeTag],
                   path: NodePath, scene: Scene[NodeTag]): (EngineNode[NodeTag], Scene[NodeTag]) \ Math.Random =
         match node {
-            case EngineNode.Camera2DWithState(cam, NodeTag.CameraShake(shakeData)) =>
-                let birdPos = Scene.globalPosition("bird", scene);
-                let baseOffset = {x = Game.cameraOffsetX(), y = 0.0};
-                if (shakeData#shakeRemaining > 0.0) {
-                    let ox = (Math.Random.randomFloat64() - 0.5) * 2.0 * shakeData#shakeIntensity;
-                    let oy = (Math.Random.randomFloat64() - 0.5) * 2.0 * shakeData#shakeIntensity;
-                    let newCam = cam
-                        |> Node2D.setPosition({x = birdPos#x, y = 0.0})
-                        |> Camera2D.setOffset({x = baseOffset#x + ox, y = baseOffset#y + oy});
-                    let newShake: ShakeData = {shakeRemaining = shakeData#shakeRemaining - delta,
-                                    shakeIntensity = shakeData#shakeIntensity * 0.9};
-                    (EngineNode.Camera2DWithState(newCam, NodeTag.CameraShake(newShake)), scene)
-                } else {
-                    let newCam = cam
-                        |> Node2D.setPosition({x = birdPos#x, y = 0.0})
-                        |> Camera2D.setOffset(baseOffset);
-                    (EngineNode.Camera2DWithState(newCam, NodeTag.CameraShake(shakeData)), scene)
-                }
-            case EngineNode.Camera2DWithState(cam, state) =>
-                let birdPos = Scene.globalPosition("bird", scene);
-                checked_ecast((EngineNode.Camera2DWithState(
-                    Node2D.setPosition({x = birdPos#x, y = 0.0}, cam), state), scene))
+            case EngineNode.Camera2DWithState(_, NodeTag.CameraShake(_)) =>
+                CameraScene.process(delta, node, scene)
             case EngineNode.CanvasLayerWithState(layer, NodeTag.GameOverAnim(_)) =>
                 let newScene = GameOverScene.updateAnimation(delta, scene);
                 let newState = match Scene.getState(GameOverScene.layerPath(), newScene) {
@@ -253,16 +230,6 @@ mod Game {
     pub def screenHi(): Int32 = 512
 
     // ========================================================================
-    // カメラ定数
-    // ========================================================================
-
-    /// カメラノード名
-    def cameraName(): String = "camera"
-
-    /// カメラオフセット X（参考実装 -36 の 2 倍）
-    pub def cameraOffsetX(): Float64 = -72.0
-
-    // ========================================================================
     // 背景定数
     // ========================================================================
 
@@ -307,7 +274,7 @@ mod Game {
         let scene = Scene.empty()
             |> addBackground
             |> BirdScene.addBird
-            |> addCamera
+            |> CameraScene.addCamera
             |> ScoreScene.addHud(fontAtlas, bestScore)
             |> GroundScene.addGrounds
             |> PipeScene.addPipes;
@@ -319,7 +286,7 @@ mod Game {
         let scene = Scene.empty()
             |> addBackground
             |> BirdScene.addBirdForMenu
-            |> addCamera
+            |> CameraScene.addCamera
             |> ScoreScene.addHud(fontAtlas, bestScore)
             |> GroundScene.addGrounds
             |> MenuScene.addMenuUI
@@ -331,17 +298,6 @@ mod Game {
     // シーン構築ヘルパー
     // ========================================================================
 
-    /// カメラを追加する（FixedTopLeft、鳥の初期位置に配置）
-    def addCamera(scene: Scene[NodeTag]): Scene[NodeTag] =
-        let birdPos = Scene.globalPosition("bird", scene);
-        let camera = Camera2D.makeWithOffset(
-                {x = birdPos#x, y = 0.0},
-                {x = cameraOffsetX(), y = 0.0})
-            |> Camera2D.setAnchorMode(Camera2DAnchorMode.FixedTopLeft);
-        scene |> Scene.addNode(cameraName(),
-            EngineNode.Camera2DWithState(camera,
-                NodeTag.CameraShake({shakeRemaining = 0.0, shakeIntensity = 0.0})))
-
     /// 背景を追加する（CanvasLayer layer=-1 + Sprite2D）
     def addBackground(scene: Scene[NodeTag]): Scene[NodeTag] =
         let layer = CanvasLayer.make(-1);
@@ -351,21 +307,6 @@ mod Game {
                 EngineNode.CanvasLayerWithState(layer, NodeTag.NoTag))
             |> Scene.addChild(backgroundName(), bgSpriteName(),
                 EngineNode.Sprite2DWithState(sprite, NodeTag.NoTag))
-
-    // ========================================================================
-    // カメラシェイク
-    // ========================================================================
-
-    /// カメラシェイクの強度（ピクセル）
-    def shakeIntensity(): Float64 = 3.0
-
-    /// カメラシェイクの持続時間（秒）
-    def shakeDuration(): Float64 = 0.18
-
-    /// カメラシェイクをトリガーする
-    def triggerCameraShake(intensity: Float64, duration: Float64, scene: Scene[NodeTag]): Scene[NodeTag] =
-        Scene.setState(cameraName() :: Nil,
-            NodeTag.CameraShake({shakeRemaining = duration, shakeIntensity = intensity}), scene)
 
     // ========================================================================
     // 衝突応答
@@ -423,7 +364,7 @@ mod Game {
     /// ビューポートの左端 X 座標を取得する
     pub def getViewportLeftX(scene: Scene[NodeTag]): Float64 =
         let birdPos = Scene.globalPosition("bird", scene);
-        birdPos#x + cameraOffsetX()
+        birdPos#x + CameraScene.offsetX()
 
     /// 地面グループ内の最右端 X 座標を返す（NodeRemovedHandler の再配置に使う）
     pub def maxGroundX(scene: Scene[NodeTag]): Float64 =
@@ -449,12 +390,14 @@ mod Game {
                 def emit(newState, scene, k) = {
                     let nextScene = match newState {
                         case BirdState.Hit =>
-                            triggerCameraShake(shakeIntensity(), shakeDuration(), scene)
+                            CameraScene.triggerShake(CameraScene.shakeIntensity(),
+                                                     CameraScene.shakeDuration(), scene)
                         case BirdState.Grounded =>
                             GameEngine.Audio.playAudio("sfx_swooshing");
                             StageRequested.emit(GamePhase.GameOver);
                             scene
-                                |> triggerCameraShake(shakeIntensity(), shakeDuration())
+                                |> CameraScene.triggerShake(CameraScene.shakeIntensity(),
+                                                            CameraScene.shakeDuration())
                                 |> ScoreScene.finalizeScore
                                 |> GameOverScene.addGameOverUI(fontAtlas)
                         case _ => scene

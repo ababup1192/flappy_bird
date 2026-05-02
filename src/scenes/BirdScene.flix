@@ -56,7 +56,7 @@ mod BirdScene {
     // ========================================================================
 
     /// 鳥のルートノード名
-    def name(): String = "bird"
+    pub def name(): String = "bird"
 
     /// 鳥のルートノードパス
     pub def birdPath(): NodePath = name() :: Nil
@@ -94,6 +94,10 @@ mod BirdScene {
 
     /// -30° をラジアンに変換した値
     def minRotation(): Float64 = minRotationDeg() * Vec2.pi() / 180.0
+
+    /// 画面上端の Y 座標（鳥がこれより上に行かないようにクランプする）
+    /// 本家 Flappy Bird 準拠: 上端で鳥が張り付き、上向き速度はゼロにする
+    def ceilingY(): Float64 = 0.0
 
     /// 重力倍率
     /// 参考実装: Godot 3.x デフォルト重力 98 × gravity_scale 5.0 = 490 px/s²
@@ -178,9 +182,11 @@ mod BirdScene {
     def flyingUpdate(body: RigidBody2D): RigidBody2D = body
 
     /// FlappingState.update(delta) — bird.gd: 回転 -30° クランプ + 落下時 angVel = 1.5
+    /// + 本家準拠の Y クランプ（Godot 版にはない独自追加）
     def flappingUpdate(body: RigidBody2D): RigidBody2D =
         let rot = Node2D.getRotation(body);
         let vel = RigidBody2D.getLinearVelocity(body);
+        let pos = Node2D.getPosition(body);
         // bird.gd FlappingState.update と同順:
         //   1. rot < -30°  → rot=-30°, angVel=0
         //   2. vel.y > 0   → angVel=1.5  (上書き)
@@ -188,8 +194,15 @@ mod BirdScene {
             if (rot < minRotation()) (minRotation(), 0.0)
             else (rot, RigidBody2D.getAngularVelocity(body));
         let angVel2 = if (vel#y > 0.0) fallAngularVelocity() else angVel1;
+        // Y クランプ: 上端を超えたら位置を上端に戻し、上向き速度をゼロにする
+        let (newPos, newVel) =
+            if (pos#y < ceilingY())
+                ({x = pos#x, y = ceilingY()}, {x = vel#x, y = Float64.max(vel#y, 0.0)})
+            else (pos, vel);
         body
+            |> Node2D.setPosition(newPos)
             |> Node2D.setRotation(rot1)
+            |> RigidBody2D.setLinearVelocity(newVel)
             |> RigidBody2D.setAngularVelocity(angVel2)
 
     /// HitState.update(delta) — bird.gd: 何もしない（パイプ衝突後は回転加速のみ、物理積分に委任）
