@@ -394,12 +394,15 @@ mod Game {
     // エンジン更新パイプライン
     // ========================================================================
 
-    /// エンジン更新パイプライン（input → process → physics → collision → screen → timers）
+    /// エンジン更新パイプライン（input → process → physics → collision → resolveStatic → screen → timers）
+    /// resolveStaticCollisions は emitCollision の後に呼ぶ。逆順だと bird が
+    /// ground 境界ピッタリに揃って Area2D 重なり判定が外れ、onBirdHitGround が発火しない。
     def engineUpdate(dt: Float64, scene: Scene[NodeTag]): Scene[NodeTag] \ {GameEngine.Audio, GameEngine.Game, Math.Random} =
         (GameEngine.emitInput
         >> GameEngine.process(dt, false)
         >> GameEngine.physicsProcess(dt, false, PhysicsStep.defaultGravity())
         >> GameEngine.emitCollision
+        >> GameEngine.resolveStaticCollisions
         >> GameEngine.emitScreenNotify(screenWidth = screenWi(), screenHeight = screenHi())
         >> GameEngine.emitTimers)(scene)
 

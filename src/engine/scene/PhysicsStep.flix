@@ -1,29 +1,32 @@
-/// 物理ステップ — Node.physicsProcess + RigidBody2D の重力・ダンピング・速度積分・静的衝突解決
+/// 物理ステップ — Node.physicsProcess + RigidBody2D の重力・ダンピング・速度積分
 ///
 /// Godot の physics_process に相当する物理更新。
+/// 静的衝突解決（resolveStaticCollisions）は別フェーズ — エリア重なり検出
+/// （emitCollision）の後に呼び出す。順序を逆にすると、RigidBody2D が
+/// StaticBody2D に接触した瞬間に Area2D が「ピッタリ境界」になり、
+/// 重なり判定が外れて areaEntered が発火しないため。
 ///
 /// 使い方:
 ///   PhysicsStep.step(delta, paused, gravity, scene)
+///   ... emitCollision で Area2D 重なりを検出 ...
+///   PhysicsStep.resolveStaticCollisions(scene)
 ///
 /// 処理順序:
 ///   1. Node.physicsProcess（全ノード）— 力の適用・速度変更などカスタム物理ロジック
 ///   2. 重力加速: linearVelocity += gravity * gravityScale * delta
 ///   3. ダンピング: linearVelocity /= (1 + linearDamp * delta)
 ///   4. 速度積分: position += linearVelocity * delta, rotation += angularVelocity * delta
-///   5. 静的衝突解決: RigidBody2D を physicsCollisionEnabled な StaticBody2D から押し出し、
-///      接触法線方向の速度をゼロにする
 ///
 pub mod PhysicsStep {
 
     /// デフォルト重力（Godot 準拠: 980 pixels/sec² 下向き）
     pub def defaultGravity(): Vec2.Vec2 = {x = 0.0, y = 980.0}
 
-    /// 物理ステップ: physicsProcess → 重力適用 → ダンピング → 速度積分 → 静的衝突解決
+    /// 物理ステップ: physicsProcess → 重力適用 → ダンピング → 速度積分
     /// 全ノードの physicsProcess を呼んだ後、RigidBody2D に物理更新を適用する。
     pub def step(delta: Float64, paused: Bool, gravity: Vec2.Vec2, scene: Scene[s]): Scene[s] \ Node.Aef[s] with Node[s] =
         let afterPhysicsProcess = Scene.physicsProcessAll(delta, paused, scene);
-        let afterIntegrate = integrate(delta, gravity, afterPhysicsProcess);
-        resolveStaticCollisions(afterIntegrate)
+        integrate(delta, gravity, afterPhysicsProcess)
 
     /// RigidBody2D への重力・ダンピング・速度積分のみ行う（physicsProcess なし）
     pub def integrate(delta: Float64, gravity: Vec2.Vec2, scene: Scene[s]): Scene[s] =

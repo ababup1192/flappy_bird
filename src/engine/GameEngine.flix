@@ -136,6 +136,11 @@ mod GameEngine {
             with AreaHandler[s] =
         AreaEvent.handleOverlaps(scene)
 
+    /// RigidBody2D を physicsCollisionEnabled な StaticBody2D から押し出す。
+    /// emitCollision の後に呼ぶこと（先に呼ぶと境界ピッタリで Area2D 重なりが外れる）
+    pub def resolveStaticCollisions(scene: Scene[s]): Scene[s] =
+        PhysicsStep.resolveStaticCollisions(scene)
+
     /// 画面内外の遷移を検出し ScreenNotifyHandler で通知する
     pub def emitScreenNotify(screenWidth: {screenWidth = Int32},
                       screenHeight: {screenHeight = Int32},
