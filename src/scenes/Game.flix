@@ -155,7 +155,7 @@ instance ButtonEvent.ButtonHandler[NodeTag] {
 // 鳥 ↔ 地面 / パイプ / コイン の交差を各シーンの応答処理にディスパッチする
 // ========================================================================
 
-instance AreaHandler[NodeTag] {
+instance AreaEvent.AreaHandler[NodeTag] {
     type Aef = { GameEngine.Audio, BirdStateChanged }
     pub def onAreaEntered(selfPath: NodePath, selfState: NodeTag,
                           otherPath: NodePath, otherState: NodeTag,

@@ -138,15 +138,15 @@ mod GameEngine {
 
     /// 衝突フェーズ: Area2D 重なり検出 → AreaHandler 発火 → RigidBody2D ↔ StaticBody2D 押し戻し
     /// 押し戻しは検出の後に行う（順序を逆にすると境界ピッタリで Area2D 重なりが外れる）
-    pub def emitCollision(scene: Scene[s]): Scene[s] \ AreaHandler.Aef[s]
-            with AreaHandler[s] =
+    pub def emitCollision(scene: Scene[s]): Scene[s] \ AreaEvent.AreaHandler.Aef[s]
+            with AreaEvent.AreaHandler[s] =
         AreaEvent.handleOverlaps(scene) |> PhysicsStep.resolveStaticCollisions
 
     /// 画面内外の遷移を検出し ScreenNotifyHandler で通知する
     pub def emitScreenNotify(screenWidth: {screenWidth = Int32},
                       screenHeight: {screenHeight = Int32},
                       scene: Scene[s]): Scene[s]
-            with ScreenNotifyHandler[s] =
+            with ScreenNotifyEvent.ScreenNotifyHandler[s] =
         ScreenNotifyEvent.handleScreenNotify(screenWidth, screenHeight, scene)
 
     /// タイマータイムアウトを検出し TimerHandler で応答する

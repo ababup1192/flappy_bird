@@ -33,7 +33,7 @@ instance Node[TestAreaState] {
 def testStateAreaNode(x: Float64, y: Float64, w: Float64, h: Float64, state: TestAreaState): EngineNode[TestAreaState] =
     EngineNode.Area2DWithState(Area2D.make({x = x, y = y}, CollisionShape2D.RectShape2D({width = w, height = h})), state)
 
-instance AreaHandler[TestAreaState] {
+instance AreaEvent.AreaHandler[TestAreaState] {
     type Aef = {}
     pub def onAreaEntered(selfPath: NodePath, selfState: TestAreaState,
                           _otherPath: NodePath, otherState: TestAreaState,

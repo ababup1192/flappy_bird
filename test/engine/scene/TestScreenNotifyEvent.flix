@@ -9,7 +9,7 @@ enum TestScreenState with Eq, ToString {
     case UntrackedState     // notifier なし → 無視
 }
 
-instance ScreenNotifyHandler[TestScreenState] {
+instance ScreenNotifyEvent.ScreenNotifyHandler[TestScreenState] {
     redef onScreenExited(path: NodePath, _state: TestScreenState,
                          scene: Scene[TestScreenState]): Scene[TestScreenState] =
         Scene.removeAt(path, scene)
