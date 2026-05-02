@@ -103,10 +103,4 @@ mod ScoreScene {
                 EngineNode.Label2DWithState(label, NodeTag.BestScoreLabel(bestScore))
             case other => other
         }, scene)
-
-    /// スコアラベルのテキストを指定値で更新する
-    pub def updateScore(score: Int32, scene: Scene[NodeTag]): Scene[NodeTag] =
-        Scene.mapEngineNode(scoreLabelPath(),
-            EngineNode.mapLabel2D(Label2D.setText("${score}")),
-            scene)
 }

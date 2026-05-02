@@ -348,7 +348,7 @@ mod Game {
 
     /// ビューポートの左端 X 座標を取得する
     pub def getViewportLeftX(scene: Scene[NodeTag]): Float64 =
-        let birdPos = Scene.globalPosition("bird", scene);
+        let birdPos = Scene.globalPosition(BirdScene.name(), scene);
         birdPos#x + CameraScene.offsetX()
 
     /// 地面グループ内の最右端 X 座標を返す（NodeRemovedHandler の再配置に使う）

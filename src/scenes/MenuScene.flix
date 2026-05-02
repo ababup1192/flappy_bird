@@ -72,8 +72,4 @@ mod MenuScene {
                 EngineNode.Sprite2DWithState(instructions, NodeTag.NoTag))
             |> Scene.addChild(layerName(), playButtonName(),
                 EngineNode.TextureButtonWithState(playButton, NodeTag.PlayButton))
-
-    /// メニュー UI をシーンから削除する
-    pub def removeMenuUI(scene: Scene[NodeTag]): Scene[NodeTag] =
-        Scene.removeAt(layerName() :: Nil, scene)
 }
