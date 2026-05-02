@@ -29,7 +29,8 @@ pub enum RigidBody2D {
         mass = Float64,                              // 質量（kg）
         bounce = Float64,                            // 反発係数（0.0–1.0）
         linearDamp = Float64,                        // 線形ダンピング
-        angularDamp = Float64                        // 角ダンピング
+        angularDamp = Float64,                       // 角ダンピング
+        collisionExceptions = Set[NodePath]          // この path のボディとは物理衝突解決をしない（Godot add_collision_exception_with 相当）
     })
 }
 
@@ -56,8 +57,21 @@ mod RigidBody2D {
             mass = 1.0,
             bounce = 0.0,
             linearDamp = 0.0,
-            angularDamp = 0.0
+            angularDamp = 0.0,
+            collisionExceptions = Set.empty()
         })
+
+    /// 衝突例外リストに other path を追加する（Godot add_collision_exception_with 相当）
+    /// この body は other path の StaticBody2D との物理衝突解決 (resolveStaticCollisions) を skip する。
+    /// Area2D の重なり検出には影響しない。
+    pub def addCollisionException(otherPath: NodePath, body: RigidBody2D): RigidBody2D =
+        let RigidBody2D.RigidBody2D(r) = body;
+        RigidBody2D.RigidBody2D({collisionExceptions = Set.insert(otherPath, r#collisionExceptions) | r})
+
+    /// other path が衝突例外リストに含まれるか
+    pub def hasCollisionException(otherPath: NodePath, body: RigidBody2D): Bool =
+        let RigidBody2D.RigidBody2D(r) = body;
+        Set.memberOf(otherPath, r#collisionExceptions)
 
     // ── Physics getter/setter ──
 

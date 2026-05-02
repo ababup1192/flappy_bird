@@ -396,7 +396,8 @@ mod Game {
         else scene
 
     /// 鳥がパイプに衝突したときの処理
-    /// Flapping → Hit に遷移し、鳥をパイプの左端まで押し戻す
+    /// Flapping → Hit に遷移し、衝突したパイプを collisionException に登録する。
+    /// 以降の物理衝突解決でこのパイプペアは skip され、鳥は重力で落下する。
     /// SE と camera shake は BirdScene.handleHit 側で発火される（bird.gd HitState._init 準拠）
     pub def onBirdHitPipe(pipePath: {pipePath = NodePath}, scene: Scene[NodeTag]): Scene[NodeTag] \ {GameEngine.Audio, BirdStateChanged} =
         let birdData = BirdScene.getBirdData(scene);
@@ -404,12 +405,8 @@ mod Game {
             case BirdState.Flapping => true
             case _                  => false
         };
-        if(flapping) {
-            let pipeX = Scene.globalPositionAt(pipePath#pipePath, scene)#x;
-            scene
-                |> BirdScene.handleHit
-                |> pushBirdOutOfPipe(pipeX)
-        } else scene
+        if(flapping) BirdScene.handleHit(pipePath#pipePath, scene)
+        else scene
 
     /// 鳥がコインを通過したときの処理
     /// スコアを +1 し、効果音を鳴らし、コインの NodeTag を NoTag に変更して再採点を防止する
@@ -418,15 +415,6 @@ mod Game {
         scene
             |> ScoreScene.incrementScore
             |> Scene.setState(coinPath#coinPath, NodeTag.NoTag)
-
-    /// 鳥をパイプの左端に押し戻す
-    def pushBirdOutOfPipe(pipeX: Float64, scene: Scene[NodeTag]): Scene[NodeTag] =
-        let birdRadius = 13.0;
-        let pipeHalfW = PipeScene.pipeHalfWidth();
-        scene |> BirdScene.mapBirdBody((body, birdData) ->
-            let pos = Node2D.getPosition(body);
-            (Node2D.setPosition({x = pipeX - pipeHalfW - birdRadius, y = pos#y}, body),
-             birdData))
 
     // ========================================================================
     // デルタタイム

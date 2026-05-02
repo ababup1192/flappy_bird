@@ -160,3 +160,31 @@ def testRigidBody2DCanvasItemVisibility(): Unit \ Assert =
     let body = RigidBody2D.make({x = 0.0, y = 0.0}, shape)
         |> CanvasItem.hide;
     Assert.assertEq(expected = false, CanvasItem.isVisible(body))
+
+// ========================================================================
+// collisionExceptions（Godot add_collision_exception_with 相当）
+// ========================================================================
+
+/// make 直後は例外リストが空
+@Test
+def testRigidBody2DCollisionExceptionEmpty(): Unit \ Assert =
+    let shape = CollisionShape2D.CircleShape2D({radius = 10.0});
+    let body = RigidBody2D.make({x = 0.0, y = 0.0}, shape);
+    Assert.assertEq(expected = false, RigidBody2D.hasCollisionException("foo" :: Nil, body))
+
+/// addCollisionException で登録した path は hasCollisionException で検出できる
+@Test
+def testRigidBody2DAddCollisionException(): Unit \ Assert =
+    let shape = CollisionShape2D.CircleShape2D({radius = 10.0});
+    let pipePath = "pipe_0_top" :: Nil;
+    let body = RigidBody2D.make({x = 0.0, y = 0.0}, shape)
+        |> RigidBody2D.addCollisionException(pipePath);
+    Assert.assertEq(expected = true, RigidBody2D.hasCollisionException(pipePath, body))
+
+/// 登録していない path は hasCollisionException で false を返す
+@Test
+def testRigidBody2DCollisionExceptionDisjoint(): Unit \ Assert =
+    let shape = CollisionShape2D.CircleShape2D({radius = 10.0});
+    let body = RigidBody2D.make({x = 0.0, y = 0.0}, shape)
+        |> RigidBody2D.addCollisionException("pipe_0_top" :: Nil);
+    Assert.assertEq(expected = false, RigidBody2D.hasCollisionException("pipe_1_top" :: Nil, body))

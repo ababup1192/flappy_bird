@@ -220,3 +220,42 @@ def testPhysicsStepStepCallsPhysicsProcess(): Unit \ Assert =
             Assert.assertEq(expected = (0.0, 0.0), (pos#x, pos#y))
         case _ => bug!("Expected RigidBody2DWithState")
     }
+
+// ========================================================================
+// resolveStaticCollisions: collisionExceptions による skip
+// ========================================================================
+
+/// addCollisionException で登録した StaticBody2D とは押し戻されない
+/// （Godot add_collision_exception_with 相当）
+@Test
+def testPhysicsStepResolveSkipsExceptionPair(): Unit \ Assert =
+    let rigidShape = CollisionShape2D.CircleShape2D({radius = 10.0});
+    let staticShape = CollisionShape2D.RectShape2D({width = 20.0, height = 20.0});
+    let staticPath = "wall" :: Nil;
+    // 重なり位置に配置（rigid 中心 = static 中心 → 完全に貫通）
+    let rigidBody = RigidBody2D.make({x = 0.0, y = 0.0}, rigidShape)
+        |> RigidBody2D.addCollisionException(staticPath);
+    let staticBody = StaticBody2D.make({x = 0.0, y = 0.0}, staticShape);
+    let scene = Scene.empty()
+        |> Scene.addNode("ball", EngineNode.RigidBody2DWithState(rigidBody, 0))
+        |> Scene.addNode("wall", EngineNode.StaticBody2DWithState(staticBody, 0));
+    let updated = PhysicsStep.resolveStaticCollisions(scene);
+    let pos = Scene.globalPosition("ball", updated);
+    // exception 登録済み → MTV は適用されず位置不変
+    Assert.assertEq(expected = (0.0, 0.0), (pos#x, pos#y))
+
+/// 例外なし／重なりあり → MTV による押し戻しが適用される（既存挙動の回帰確認）
+@Test
+def testPhysicsStepResolveAppliesWithoutException(): Unit \ Assert =
+    let rigidShape = CollisionShape2D.CircleShape2D({radius = 10.0});
+    let staticShape = CollisionShape2D.RectShape2D({width = 20.0, height = 20.0});
+    // 同じ位置、exception なし
+    let rigidBody = RigidBody2D.make({x = 0.0, y = 0.0}, rigidShape);
+    let staticBody = StaticBody2D.make({x = 0.0, y = 0.0}, staticShape);
+    let scene = Scene.empty()
+        |> Scene.addNode("ball", EngineNode.RigidBody2DWithState(rigidBody, 0))
+        |> Scene.addNode("wall", EngineNode.StaticBody2DWithState(staticBody, 0));
+    let updated = PhysicsStep.resolveStaticCollisions(scene);
+    let pos = Scene.globalPosition("ball", updated);
+    // 例外なし → MTV が適用されて位置が変化（具体値は MTV の方向選択次第なので不変ではないことだけ確認）
+    Assert.assertTrue(pos#x != 0.0 or pos#y != 0.0)

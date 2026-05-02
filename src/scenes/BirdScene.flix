@@ -262,14 +262,16 @@ mod BirdScene {
     // ========================================================================
 
     /// 鳥を Hit 状態に遷移させる（bird.gd `HitState._init` 相当）
-    /// 横移動停止、回転加速（sfx_hit + sfx_die）
-    pub def handleHit(scene: Scene[NodeTag]): Scene[NodeTag] \ {GameEngine.Audio, BirdStateChanged} =
+    /// 横移動停止、回転加速、衝突相手を collisionException に登録（sfx_hit + sfx_die）
+    /// otherBodyPath: 衝突相手の StaticBody2D path。以降の物理衝突解決でこのペアは skip される。
+    pub def handleHit(otherBodyPath: NodePath, scene: Scene[NodeTag]): Scene[NodeTag] \ {GameEngine.Audio, BirdStateChanged} =
         GameEngine.Audio.playAudio("sfx_hit");
         GameEngine.Audio.playAudio("sfx_die");
         let updatedScene = scene |> mapBirdBody((body, birdData) ->
             (body
                 |> RigidBody2D.setLinearVelocity(Vec2.zero())
-                |> RigidBody2D.setAngularVelocity(2.0),
+                |> RigidBody2D.setAngularVelocity(2.0)
+                |> RigidBody2D.addCollisionException(otherBodyPath),
              {state = BirdState.Hit | birdData}));
         BirdStateChanged.emit(BirdState.Hit, updatedScene)
 

@@ -490,9 +490,10 @@ def testHandleGroundedUpdatesData(): Unit \ Assert =
 /// Hit 状態にすると angular velocity が 2.0 になること（落下回転演出）
 @Test
 def testHandleHitSetsAngularVelocity(): Unit \ Assert =
+    let pipePath = "pipe_0_top" :: Nil;
     let scene = withMockAudioAndState(() ->
         testScene()
-            |> BirdScene.handleHit);
+            |> BirdScene.handleHit(pipePath));
     match Scene.getEngineNode("bird" :: Nil, scene) {
         case Some(EngineNode.RigidBody2DWithState(body, _)) =>
             Assert.assertEq(expected = 2.0, RigidBody2D.getAngularVelocity(body))
@@ -735,17 +736,17 @@ def testBirdPipeCollisionFlappingToHit(): Unit \ Assert =
     let scene = withMockAudioAndState(() -> Game.onBirdHitPipe(pipePath = pipePath, testScene()));
     Assert.assertEq(expected = BirdState.Hit, BirdScene.getBirdData(scene)#state)
 
-/// パイプ衝突時に鳥がパイプの左端に押し戻されること
-///
-///   pipe_0_top の X=576、pipeHalfWidth=26、birdRadius=13
-///   → 押し戻し後の鳥 X = 576 - 26 - 13 = 537
-///
+/// パイプ衝突時に当該パイプが鳥の collisionExceptions に登録されること
+/// （bird.gd HitState._init `add_collision_exception_with(other_body)` 相当）
 @Test
-def testBirdPipeCollisionPushBack(): Unit \ Assert =
+def testBirdPipeCollisionRegistersException(): Unit \ Assert =
     let pipePath = "pipe_0_top" :: Nil;
     let scene = withMockAudioAndState(() -> Game.onBirdHitPipe(pipePath = pipePath, testScene()));
-    let birdX = Scene.globalPosition("bird", scene)#x;
-    Assert.assertEq(expected = 537.0, birdX)
+    match Scene.getEngineNode("bird" :: Nil, scene) {
+        case Some(EngineNode.RigidBody2DWithState(body, _)) =>
+            Assert.assertTrue(RigidBody2D.hasCollisionException(pipePath, body))
+        case _ => bug!("bird not found")
+    }
 
 /// Hit 状態で再度パイプ衝突しても変化しないこと
 @Test
@@ -753,7 +754,7 @@ def testBirdPipeCollisionHitNoChange(): Unit \ Assert =
     let pipePath = "pipe_0_top" :: Nil;
     let scene = withMockAudioAndState(() ->
         testScene()
-            |> BirdScene.handleHit
+            |> BirdScene.handleHit(pipePath)
             |> Game.onBirdHitPipe(pipePath = pipePath));
     Assert.assertEq(expected = BirdState.Hit, BirdScene.getBirdData(scene)#state)
 
