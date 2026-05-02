@@ -155,13 +155,10 @@ mod PipeScene {
     /// 画面外になったペアの再スポーンは NodeRemovedHandler が担う
     pub def addPipes(scene: Scene[NodeTag]): Scene[NodeTag] \ Math.Random =
         let spacing = pipeSpacingX();
-        let (addPipesScene, _, _) = List.range(0, initialPipeCount())
-            |> List.foldLeft((acc, _i) ->
-                let (accScene, counter, nextX) = acc;
-                let newScene = spawnPipePair(counter, nextX, 0, accScene);
-                (newScene, counter + 1, nextX + spacing)
-            , (scene, 0, firstPipeX()));
-        addPipesScene
+        List.range(0, initialPipeCount())
+            |> List.foldLeft((acc, i) ->
+                spawnPipePair(i, firstPipeX() + Int32.toFloat64(i) * spacing, 0, acc),
+                scene)
 
     /// パイプグループ内の最右端 X 座標を返す（リサイクル位置決定に使用）
     pub def maxPipeX(scene: Scene[NodeTag]): Float64 =

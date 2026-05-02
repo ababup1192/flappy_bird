@@ -152,7 +152,7 @@ mod BirdScene {
                 EngineNode.Area2DWithState(area, NodeTag.BirdArea))
 
     /// メニュー画面用の鳥をシーンに追加する
-    /// Flying 状態・重力なし・速度ゼロで配置。ボビングアニメーションのみ行う
+    /// Flying 状態・重力なし・速度ゼロで配置（毎フレーム update は no-op）
     pub def addBirdForMenu(scene: Scene[NodeTag]): Scene[NodeTag] =
         let body = RigidBody2D.make(startPosition(), birdCollisionShape())
             |> RigidBody2D.setGravityScale(0.0)
