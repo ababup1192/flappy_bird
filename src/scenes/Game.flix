@@ -309,27 +309,24 @@ mod Game {
     /// ゲームの初期状態を構築する
     /// bestScore: セッション中のベストスコア（初回は 0）
     pub def buildState(fontAtlas: FontAtlas, bestScore: BestScore): GameState \ Math.Random =
-        let (sceneWithGrounds, _, _) =
-            Scene.empty()
-                |> addBackground
-                |> BirdScene.addBird
-                |> addCamera
-                |> ScoreScene.addHud(fontAtlas, bestScore)
-                |> GroundScene.addGrounds;
-        let (sceneWithPipes, _, _) = PipeScene.addPipes(sceneWithGrounds);
-        {scene = sceneWithPipes, phase = GamePhase.Playing}
+        let scene = Scene.empty()
+            |> addBackground
+            |> BirdScene.addBird
+            |> addCamera
+            |> ScoreScene.addHud(fontAtlas, bestScore)
+            |> GroundScene.addGrounds
+            |> PipeScene.addPipes;
+        {scene = scene, phase = GamePhase.Playing}
 
     /// メニュー画面の初期状態を構築する
     /// 背景 + 鳥(Flying) + カメラ + HUD(スコア非表示) + 地面 + メニュー UI
     pub def buildMenuState(fontAtlas: FontAtlas, bestScore: BestScore): GameState =
-        let (sceneWithGrounds, _, _) =
-            Scene.empty()
-                |> addBackground
-                |> BirdScene.addBirdForMenu
-                |> addCamera
-                |> ScoreScene.addHud(fontAtlas, bestScore)
-                |> GroundScene.addGrounds;
-        let scene = sceneWithGrounds
+        let scene = Scene.empty()
+            |> addBackground
+            |> BirdScene.addBirdForMenu
+            |> addCamera
+            |> ScoreScene.addHud(fontAtlas, bestScore)
+            |> GroundScene.addGrounds
             |> MenuScene.addMenuUI
             |> Scene.mapEngineNode(ScoreScene.scoreLabelPath(),
                 EngineNode.mapLabel2D(CanvasItem.hide));

@@ -138,8 +138,8 @@ mod PipeScene {
 
     /// 初期パイプ（3 ペア）を配置する
     /// score=0 の初心者向けギャップで配置する
-    /// 戻り値: (更新されたシーン, 次のペア番号, 次のペア X 座標)
-    pub def addPipes(scene: Scene[NodeTag]): (Scene[NodeTag], Int32, Float64) \ Math.Random =
+    /// 画面外になったペアの再スポーンは NodeRemovedHandler が担う
+    pub def addPipes(scene: Scene[NodeTag]): Scene[NodeTag] \ Math.Random =
         let spacing = pipeSpacingX();
         List.range(0, initialPipeCount())
             |> List.foldLeft((acc, _i) ->
@@ -147,6 +147,10 @@ mod PipeScene {
                 let newScene = spawnPipePair(counter, nextX, 0, accScene);
                 (newScene, counter + 1, nextX + spacing)
             , (scene, 0, firstPipeX()))
+            |> fst3
+
+    /// 3 要素タプルから先頭を取り出す
+    def fst3(t: (a, b, c)): a = let (x, _, _) = t; x
 
     /// パイプグループ内の最右端 X 座標を返す（リサイクル位置決定に使用）
     pub def maxPipeX(scene: Scene[NodeTag]): Float64 =
@@ -161,37 +165,4 @@ mod PipeScene {
         let nextX = maxPipeX(scene) + pipeSpacingX();
         let id = Float64.tryToInt32(nextX) |> Option.getWithDefault(0);
         spawnPipePair(id, nextX, score, scene)
-
-    // ========================================================================
-    // パイプリサイクル
-    // ========================================================================
-
-    /// 画面外のパイプを削除し、右端に再スポーンする
-    /// viewportLeftX: カメラが映す左端の X 座標
-    /// pipeCounter: 次のペア番号（ユニーク名生成用）
-    /// nextPipeX: 次のペアの X 座標
-    /// score: 現在のスコア（縦ギャップの決定に使用）
-    /// 戻り値: (更新されたシーン, 更新されたペア番号, 更新された次のペア X)
-    pub def recyclePipes(viewportLeftX: Float64,
-                         pipeCounter: Int32, nextPipeX: Float64,
-                         score: Int32,
-                         scene: Scene[NodeTag]): (Scene[NodeTag], Int32, Float64) \ Math.Random =
-        let paths = Scene.getNodesInGroup(pipeGroup(), scene);
-        let offScreenPaths = List.filter(path ->
-            let pos = Scene.globalPositionAt(path, scene);
-            pos#x + pipeHalfWidth() < viewportLeftX
-        , paths);
-        // 画面外パイプを全て削除
-        let cleanedScene = List.foldLeft((accScene, path) ->
-            Scene.removeAt(path, accScene)
-        , scene, offScreenPaths);
-        // 削除数 / 3 = ペア数を再スポーン（top + bottom + coin = 3 ノード/ペア）
-        let spacing = pipeSpacingX();
-        let pairsToSpawn = List.length(offScreenPaths) / 3;
-        List.range(0, pairsToSpawn)
-            |> List.foldLeft((acc, _i) ->
-                let (accScene, counter, nextX) = acc;
-                let newScene = spawnPipePair(counter, nextX, score, accScene);
-                (newScene, counter + 1, nextX + spacing)
-            , (cleanedScene, pipeCounter, nextPipeX))
 }

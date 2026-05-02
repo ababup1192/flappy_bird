@@ -60,40 +60,10 @@ mod GroundScene {
                 EngineNode.Sprite2DWithState(sprite, NodeTag.NoTag))
 
     /// 初期地面タイルを配置する（2 枚で画面幅 + スクロールバッファをカバー）
-    /// 戻り値: (更新されたシーン, 次のタイル番号, 次のタイル中心 X)
-    pub def addGrounds(scene: Scene[NodeTag]): (Scene[NodeTag], Int32, Float64) =
+    /// 画面外になったタイルの再配置は NodeRemovedHandler が担う
+    pub def addGrounds(scene: Scene[NodeTag]): Scene[NodeTag] =
         let halfWidth = groundWidth() / 2.0;
-        let x0 = halfWidth;
-        let x1 = x0 + groundWidth();
-        let updatedScene = scene
-            |> spawnGround("ground_0", x0)
-            |> spawnGround("ground_1", x1);
-        (updatedScene, 2, x1 + groundWidth())
-
-    // ========================================================================
-    // 地面リサイクル
-    // ========================================================================
-
-    /// カメラ左端を超えた地面タイルを右端に再配置する
-    /// viewportLeftX: カメラが映す左端の X 座標
-    /// groundCounter: 次のタイル番号（ユニーク名生成用）
-    /// nextGroundX: 次のタイルの中心 X 座標
-    /// 戻り値: (更新されたシーン, 更新されたタイル番号, 更新された次のタイル X)
-    pub def recycleGrounds(viewportLeftX: Float64,
-                           groundCounter: Int32, nextGroundX: Float64,
-                           scene: Scene[NodeTag]): (Scene[NodeTag], Int32, Float64) =
-        let halfWidth = groundWidth() / 2.0;
-        let paths = Scene.getNodesInGroup(groundGroup(), scene);
-        let offScreenPaths = List.filter(path ->
-            let pos = Scene.globalPositionAt(path, scene);
-            pos#x + halfWidth < viewportLeftX
-        , paths);
-        List.foldLeft((acc, path) ->
-            let (accScene, counter, nextX) = acc;
-            let newName = "ground_${counter}";
-            let newScene = accScene
-                |> Scene.removeAt(path)
-                |> spawnGround(newName, nextX);
-            (newScene, counter + 1, nextX + groundWidth())
-        , (scene, groundCounter, nextGroundX), offScreenPaths)
+        scene
+            |> spawnGround("ground_0", halfWidth)
+            |> spawnGround("ground_1", halfWidth + groundWidth())
 }
