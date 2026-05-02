@@ -491,43 +491,33 @@ mod Game {
 
     /// メインループ: 入力 → エンジン更新 → フェーズ遷移
     /// Play ボタンクリックは emitButtons → ButtonHandler が PlayButton.pressed=true をセット。
-    /// gameLoop はフレーム冒頭で同フラグをクリアし、エンジン更新後に読み出して遷移判定に使う。
+    /// gameLoop は consumePlayButtonPressed で読み出し時にフラグを消費する。
     def gameLoop(fontAtlas: FontAtlas, state: GameState): Unit \ {GameEngine.Game, GameEngine.Audio, Math.Random, BirdStateChanged} =
-        if (GameEngine.Game.shouldClose()) ()
-        else if (GameEngine.Game.isKeyPressed(GameEngine.Key.Escape)) ()
+        if (GameEngine.Game.shouldClose() or
+            GameEngine.Game.isKeyPressed(GameEngine.Key.Escape)) ()
         else {
             let dt = clampDeltaTime(GameEngine.Game.getDeltaTime());
-            let frameScene = state#scene
-                |> MenuScene.clearPlayButton
-                |> GameOverScene.clearPlayButton;
+            let updatedScene = state#scene |> engineUpdate(dt);
             let nextState: GameState = match state#phase {
                 case GamePhase.Playing =>
-                    // GameOver UI 構築・sfx・ベスト確定は BirdStateChanged ハンドラ側で行うため、
-                    // ここでは phase 切替判定だけ行う（updatedScene には既に GameOver UI が乗っている）
-                    let updatedScene = frameScene |> engineUpdate(dt);
-                    let birdData = BirdScene.getBirdData(updatedScene);
-                    let nextPhase =
-                        if (birdData#state == BirdState.Grounded) GamePhase.GameOver
-                        else GamePhase.Playing;
-                    {scene = updatedScene, phase = nextPhase}
+                    let grounded = BirdScene.getBirdData(updatedScene)#state == BirdState.Grounded;
+                    {scene = updatedScene,
+                     phase = if (grounded) GamePhase.GameOver else GamePhase.Playing}
                 case GamePhase.Menu =>
-                    let updatedScene = frameScene |> engineUpdate(dt);
-                    if (MenuScene.isPlayButtonPressed(updatedScene)) {
+                    let (pressed, s) = MenuScene.consumePlayButtonPressed(updatedScene);
+                    if (pressed) {
                         GameEngine.Audio.playAudio("sfx_swooshing");
-                        let bestScore = ScoreScene.getBestScore(updatedScene);
-                        buildState(fontAtlas, bestScore)
-                    } else {
-                        {scene = updatedScene, phase = GamePhase.Menu}
-                    }
+                        buildState(fontAtlas, ScoreScene.getBestScore(s))
+                    } else
+                        {scene = s, phase = GamePhase.Menu}
                 case GamePhase.GameOver =>
-                    let updatedScene = frameScene |> engineUpdate(dt);
-                    let animFinished = GameOverScene.isAnimationFinished(updatedScene);
-                    if (animFinished and GameOverScene.isPlayButtonPressed(updatedScene)) {
-                        let bestScore = ScoreScene.getBestScore(updatedScene);
-                        buildMenuState(fontAtlas, bestScore)
-                    } else {
-                        {scene = updatedScene, phase = GamePhase.GameOver}
-                    }
+                    if (GameOverScene.isAnimationFinished(updatedScene)) {
+                        let (pressed, s) = GameOverScene.consumePlayButtonPressed(updatedScene);
+                        if (pressed) buildMenuState(fontAtlas, ScoreScene.getBestScore(s))
+                        else {scene = s, phase = GamePhase.GameOver}
+                    } else
+                        {scene = updatedScene |> GameOverScene.clearPlayButton,
+                         phase = GamePhase.GameOver}
             };
             GameEngine.render(nextState#scene);
             gameLoop(fontAtlas, nextState)

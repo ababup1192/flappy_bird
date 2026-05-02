@@ -236,4 +236,10 @@ mod GameOverScene {
 
     pub def clearPlayButton(scene: Scene[NodeTag]): Scene[NodeTag] =
         MenuScene.mapPlayButton(playButtonPath(), (btn, _) -> (btn, {pressed = false}), scene)
+
+    /// Play ボタンの押下フラグを取得し、同時にクリアする
+    /// (押下されていた場合は true, クリア後 Scene を返す)
+    pub def consumePlayButtonPressed(scene: Scene[NodeTag]): (Bool, Scene[NodeTag]) =
+        let pressed = isPlayButtonPressed(scene);
+        if (pressed) (true, clearPlayButton(scene)) else (false, scene)
 }
