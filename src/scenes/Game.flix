@@ -223,28 +223,15 @@ mod Game {
     def bgSpriteName(): String = "bg_sprite"
 
     // ========================================================================
-    // フェーズ判定（Scene 構造から導出）
+    // 開始入力受付判定
     // ========================================================================
 
-    /// Scene の構造から現在のゲームフェーズを判定する
-    /// GameOver layer 存在 → GameOver / Pipe 存在 → Playing / それ以外 → Menu
-    pub def currentPhase(scene: Scene[NodeTag]): GamePhase =
-        match Scene.getEngineNode(GameOverScene.layerPath(), scene) {
-            case Some(_) => GamePhase.GameOver
-            case None    =>
-                if (List.length(Scene.getNodesInGroup(PipeScene.pipeGroup(), scene)) > 0)
-                    GamePhase.Playing
-                else
-                    GamePhase.Menu
-        }
-
     /// ゲーム開始入力を受け付けるか判定する
-    /// Menu / GameOver(アニメ完了後) のとき true
+    /// GameOver layer 存在: アニメ完了後 / 不在: パイプが無いとき (= Menu)
     pub def canStart(scene: Scene[NodeTag]): Bool =
-        match currentPhase(scene) {
-            case GamePhase.Menu     => true
-            case GamePhase.GameOver => GameOverScene.isAnimationFinished(scene)
-            case GamePhase.Playing  => false
+        match Scene.getEngineNode(GameOverScene.layerPath(), scene) {
+            case Some(_) => GameOverScene.isAnimationFinished(scene)
+            case None    => Scene.getNodesInGroup(PipeScene.pipeGroup(), scene) |> List.isEmpty
         }
 
     // ========================================================================
