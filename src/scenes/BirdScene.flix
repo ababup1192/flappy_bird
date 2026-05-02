@@ -309,4 +309,13 @@ mod BirdScene {
             case Some(NodeTag.Bird(birdData)) => birdData
             case _ => bug!("bird not found")
         }
+
+    /// 鳥の RigidBody2D が otherPath を collisionExceptions に登録しているか
+    /// Hit 状態で別パイプに着地したかを判定するために使う
+    pub def bodyHasCollisionException(otherPath: NodePath, scene: Scene[NodeTag]): Bool =
+        match Scene.getEngineNode(birdPath(), scene) {
+            case Some(EngineNode.RigidBody2DWithState(body, _)) =>
+                RigidBody2D.hasCollisionException(otherPath, body)
+            case _ => false
+        }
 }

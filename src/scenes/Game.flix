@@ -385,17 +385,20 @@ mod Game {
         else scene
 
     /// 鳥がパイプに衝突したときの処理
-    /// Flapping → Hit に遷移し、衝突したパイプを collisionException に登録する。
-    /// 以降の物理衝突解決でこのパイプペアは skip され、鳥は重力で落下する。
-    /// SE と camera shake は BirdScene.handleHit 側で発火される（bird.gd HitState._init 準拠）
+    /// Flapping → Hit: 衝突パイプを collisionException に登録し、鳥は重力で落下する
+    /// Hit → Grounded: 衝突パイプが exception に未登録 = 別パイプの上に乗ってしまった
+    ///                 状態とみなし、Grounded に遷移してゲームオーバーへ繋ぐ
+    /// SE と camera shake は BirdScene 側のハンドラで発火される
     pub def onBirdHitPipe(pipePath: {pipePath = NodePath}, scene: Scene[NodeTag]): Scene[NodeTag] \ {GameEngine.Audio, BirdStateChanged} =
         let birdData = BirdScene.getBirdData(scene);
-        let flapping = match birdData#state {
-            case BirdState.Flapping => true
-            case _                  => false
-        };
-        if(flapping) BirdScene.handleHit(pipePath#pipePath, scene)
-        else scene
+        match birdData#state {
+            case BirdState.Flapping =>
+                BirdScene.handleHit(pipePath#pipePath, scene)
+            case BirdState.Hit =>
+                if (BirdScene.bodyHasCollisionException(pipePath#pipePath, scene)) scene
+                else BirdScene.handleGrounded(scene)
+            case _ => scene
+        }
 
     /// 鳥がコインを通過したときの処理
     /// スコアを +1 し、効果音を鳴らし、コインの NodeTag を NoTag に変更して再採点を防止する

@@ -21,13 +21,15 @@ pub enum Marker2D {
 
 mod Marker2D {
     /// デフォルト値で Marker2D を生成する
+    /// visible=true は Godot 準拠。Marker2D 自身は描画されないが、子ノードの可視性伝播
+    /// （`drawContextWalk` の AND）で false にすると子も描画されないため
     pub def make(position: Vec2.Vec2): Marker2D =
         Marker2D.Marker2D({
             position = position,
             rotation = 0.0,
             scale = {x = 1.0, y = 1.0},
             skew = 0.0,
-            visible = false,
+            visible = true,
             zIndex = 0,
             modulate = {r = 1.0f32, g = 1.0f32, b = 1.0f32}
         })

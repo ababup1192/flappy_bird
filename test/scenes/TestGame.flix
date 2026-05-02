@@ -708,7 +708,7 @@ def testBirdPipeCollisionRegistersException(): Unit \ Assert =
         case _ => bug!("bird not found")
     }
 
-/// Hit 状態で再度パイプ衝突しても変化しないこと
+/// Hit 状態で再度同じパイプ（collisionException 登録済み）と衝突しても変化しないこと
 @Test
 def testBirdPipeCollisionHitNoChange(): Unit \ Assert =
     let pipePath = PipeScene.topPath(PipeScene.pairName(0));
@@ -717,6 +717,30 @@ def testBirdPipeCollisionHitNoChange(): Unit \ Assert =
             |> BirdScene.handleHit(pipePath)
             |> Game.onBirdHitPipe(pipePath = pipePath));
     Assert.assertEq(expected = BirdState.Hit, BirdScene.getBirdData(scene)#state)
+
+/// Hit 状態で別パイプ（collisionException 未登録）に衝突したら Grounded に遷移すること
+/// （パイプの上に着地して回り続ける現象の防止）
+@Test
+def testBirdPipeCollisionHitToGroundedOnDifferentPipe(): Unit \ Assert =
+    let hitPipePath = PipeScene.topPath(PipeScene.pairName(0));
+    let landedPipePath = PipeScene.bottomPath(PipeScene.pairName(1));
+    let scene = withMockAudioAndState(() ->
+        testScene()
+            |> BirdScene.handleHit(hitPipePath)
+            |> Game.onBirdHitPipe(pipePath = landedPipePath));
+    Assert.assertEq(expected = BirdState.Grounded, BirdScene.getBirdData(scene)#state)
+
+/// bodyHasCollisionException は handleHit で登録したパスに対して true を返すこと
+@Test
+def testBodyHasCollisionException(): Unit \ Assert =
+    let pipePath = PipeScene.topPath(PipeScene.pairName(0));
+    let otherPath = PipeScene.bottomPath(PipeScene.pairName(1));
+    let scene = withMockAudioAndState(() ->
+        testScene() |> BirdScene.handleHit(pipePath));
+    Assert.assertEq(
+        expected = (true, false),
+        (BirdScene.bodyHasCollisionException(pipePath, scene),
+         BirdScene.bodyHasCollisionException(otherPath, scene)))
 
 /// Grounded 状態でパイプ衝突しても変化しないこと
 @Test
