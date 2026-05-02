@@ -1,6 +1,6 @@
 ---
-name: scene-pattern
-description: "XxxSceneモジュールの構築・更新パターン。型定義・定数・addXxx・mapXxxSprite/mapXxxArea/mapXxxの書き方"
+name: scene-editor
+description: xxScene.flixを新規で作るとき・編集するとき、新しいゲームロジックを組む時に考えるべき設計パターン
 user-invocable: false
 ---
 
@@ -12,63 +12,72 @@ user-invocable: false
 
 ```
 mod XxxScene {
-    // (A) 型定義   — XxxData
-    // (B) 定数     — name / path / shape / animations
-    // (C) 構築     — addXxx: Scene → Scene
-    // (D) ロジック — ready / process / start 等
-    // (E) mapXxxSprite / mapXxxArea / mapXxx（合成）
+    // (A) 型定義   — SpriteData, AreaData
+    // (B) 定数     — name / path / texture, speed, position
+    // (C) 構築     — add: Scene → Scene
+    // (D) ロジック — ready / process / start / input / move
+    // (E) ボイラプレート mapXxxSprite / mapXxxArea / mapXxx（合成）
 }
 ```
 
 ## (A) 型定義
 
-```flix
-/// ゲーム状態（フレーム間で変化する純粋データ）
-pub type alias XxxData = { velocity = Vec2.Vec2, hp = Int32 }
-```
+### NodeTagのデータ設計
 
-- `XxxData`: フレーム間で変化する純粋データ。レコード、Int32、Bool など用途に合わせる
-- エンジン型（AnimatedSprite2D, Area2D 等）は `EngineNode` の中に1箇所だけ存在する。
-  **`XxxData` にエンジン型を含めない**（二重管理を避けるため）
+NodeTagで使うデータは、Sceneごとに使用されるデータ型を定義する。
 
-### NodeTag バリアント設計
-
-親ノードの state にデータを持たせ、子ノードの state は識別タグにする:
-
-```flix
-pub enum NodeTag {
-    case XxxSprite(XxxScene.XxxData)  // 親ノード: データを保持
-    case XxxArea                       // 子ノード: 識別タグ（衝突判定で使用）
-    case NoTag                        // その他の子: 汎用タグ
+```Game.flix
+enum NodeTag {
+    case Player(PlayerScene.Data)
+    case PlayerArea(PlayerScene.AreaData)
+    case CoinLabel(HUDScene.Coin)
 }
 ```
 
-**アンチパターン: エンジン型をレコードにまとめて NodeTag に持つ**
+プリミティブラッパーパターンは、データの意味を明確にし、可読性を高めるために有効:
 
-```flix
-// NG: sprite が EngineNode と XxxNode の2箇所に存在し、毎フレーム同期が必要
-type alias XxxNode = { sprite = AnimatedSprite2D, area = Area2D }
-case Xxx(XxxNode, XxxData)
+```HUDScene.flix
+pub type alias Coin = Int32
 ```
 
+ノードツリー構造に合わせて、親ノードと子ノードのデータを分ける:
+ルートノードのデータ型の場合は、`Data`として、プレフィックスを省略する
+
+```PlayerScene.flix
+// CharacterBody2D(Player)
+//  └── Area2D (PlayerArea)
+
+pub type alias Data = { velocity = Vec2.Vec2, hp = Int32 }
+pub type alias AreaData = { hit = Bool }
+```
 ## (B) 定数
 
-```flix
+Nodeの名前やパス, テクスチャ名は、定数で一元管理する。ハードコードは禁止。
+
+```PlayerScene.flix
 def name(): String = "xxx"
 def xxxPath(): NodePath = name() :: Nil
 def areaName(): String = "area"
 def areaPath(): NodePath = name() :: areaName() :: Nil   // 非公開
+def xxxTexture = "xxx.png"
+def xxxBgm = "xxx_bgm.ogg"
 ```
 
-パスは `parentName :: childName :: Nil` 形式。定数関数で一元管理する。
-`areaPath()` 等の子ノードパスは非公開にし、`mapXxxArea` 経由でアクセスさせる。
+パラメータ、物理パラメータなども定数で管理する:
 
-## (C) 構築 — addXxx
+```PlayerScene.flix
+def speed(): Float64 = 100.0
+def velocityY(): Float64 = -300.0
+```
 
-**原則: 親ノードが `XxxSprite(XxxData)` を持ち、子は識別タグまたは `NoTag`。**
+## (C) 構築 — add
+
+ノードツリーを構築して、Sceneに追加する。
+このときに、NodeTagと(A)で定義したデータ型(初期値)を紐づける。
+さらに細かい単位で、Sceneに追加したい場合は、addXxx のような関数を追加する。
 
 ```flix
-pub def addXxx(scene: Scene[NodeTag]): Scene[NodeTag] =
+pub def add(scene: Scene[NodeTag]): Scene[NodeTag] =
     let sprite = AnimatedSprite2D.make(animations, initialAnimation = "idle",
         fps = 5.0, startPos, scale)
         |> CanvasItem.hide;
@@ -103,10 +112,12 @@ pub def spawnXxx(name: String, position: Vec2.Vec2,
 
 ## (D) ロジック
 
-### ready / process — Node instance への委譲
+### ready / process / physicsProcess
 
-XxxScene に ready / process を定義し、Game.flix の `Node[NodeTag]` instance から委譲する。
-スタイルは 2 種類ある:
+ゲームエンジンでは、以下のライフサイクルが存在する。
+各Sceneでは、ライフサイクルに応じたロジックを定義し、Game.flixは、各Sceneのライフサイクルロジックを呼び出し、委譲する。
+
+- ready
 
 **純粋スタイル** — エンジン型 + データを受け取り、更新して返す。Node instance 側でラップ/アンラップ:
 

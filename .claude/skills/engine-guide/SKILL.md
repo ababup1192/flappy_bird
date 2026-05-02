@@ -66,16 +66,19 @@ pub type alias GameState = { scene = Scene[NodeTag], phase = GamePhase }
 
 ### NodeTag enum
 
-これを起点に、Sceneの書き換えや処理を行う:
-NodeTagになるべくNodeに関連したデータを紐づけて、関連処理を行う。
+NodeTagは、イベントのフックとして使われるSceneのノードに関連した識別情報を持つための列挙型。
+さらにゲームの状態を識別情報とセットで持つバリアントも含める。
+そうすることで、集約度が高くなり、Sceneのノードとゲームの状態を一元管理できる。
+バリアントの命名規則として、xxSprite, xxArea, xxTimerのように、Node名を接頭辞にすることで、役割が明確になる。
 
 ```flix
+type alias Score = Int32 // 状態はプリミティブ型の場合は、意味づけのための type alias で別名をつける
+
 pub enum NodeTag {
-    case XxxState(XxxScene.XxxNode, XxxScene.XxxData)  // 親: XxxNode + 状態を持つ
-    case XxxArea                                        // 子: 識別のみ（データなし）
-    case YyyData(Int32)                                 // 親: 軽量な状態
-    case SpawnTimer(Int32)                              // タイマー + カウンタ
-    case NoTag                                         // 汎用: 状態なし
+    case xxxSprite(xxxData)                       // Sprite2D + データ
+    case XxxArea                                  // 衝突判定を行うためのタグ状態は持たない
+    case ScoreTimer(Score)                        // タイマー + スコア
+    case NoTag                                    // イベントフックなし
 }
 ```
 
@@ -95,19 +98,19 @@ instance Node[NodeTag] {
         case EngineNode.AnimSprite2DWithState(sprite, NodeTag.XxxState(n, data)) =>
             let (s, d) = XxxScene.ready(sprite, data);
             (EngineNode.AnimSprite2DWithState(s, NodeTag.XxxState({ sprite = s | n }, d)), scene)
-        // Scene スタイル: path + scene を渡し、更新済みノードを取り直す
-        case EngineNode.RigidBody2DWithState(_, NodeTag.YyyData(_)) =>
-            let newScene = YyyScene.ready(path, scene);
-            match Scene.getEngineNode(path, newScene) {
-                case Some(en) => (en, newScene)
-                case None     => (node, newScene)
-            }
         case _ => (node, scene)
     }
 
     redef process(delta, node, _path, scene) = match node {
         case EngineNode.AnimSprite2DWithState(sprite, NodeTag.XxxState(n, data)) =>
             let moved = XxxScene.process(delta, sprite, data);
+            (EngineNode.AnimSprite2DWithState(moved, NodeTag.XxxState({ sprite = moved | n }, data)), scene)
+        case _ => (node, scene)
+    }
+
+    physicProcess(delta, node, _path, scene) = match node {
+        case EngineNode.AnimSprite2DWithState(sprite, NodeTag.XxxState(n, data)) =>
+            let moved = XxxScene.physicsProcess(delta, sprite, data);
             (EngineNode.AnimSprite2DWithState(moved, NodeTag.XxxState({ sprite = moved | n }, data)), scene)
         case _ => (node, scene)
     }
