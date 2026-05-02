@@ -51,8 +51,8 @@ pub enum NodeTag {
     case ScoreLabel(Score)
     /// ベストスコアラベルに付与。セッション中のベストスコアを保持する
     case BestScoreLabel(BestScore)
-    /// カメラシェイク状態を保持する
-    case CameraShake(CameraScene.ShakeData)
+    /// カメラの追従対象とシェイク状態を保持する
+    case Camera(CameraScene.CameraData)
     /// ゲームオーバーアニメーション状態を保持する
     case GameOverAnim(GameOverAnimData)
     /// Play ボタンノードに付与。ButtonHandler が path で識別して StageRequested を発火する
@@ -93,7 +93,7 @@ instance Node[NodeTag] {
     redef process(delta: Float64, node: EngineNode[NodeTag],
                   path: NodePath, scene: Scene[NodeTag]): (EngineNode[NodeTag], Scene[NodeTag]) \ Math.Random =
         match node {
-            case EngineNode.Camera2DWithState(_, NodeTag.CameraShake(_)) =>
+            case EngineNode.Camera2DWithState(_, NodeTag.Camera(_)) =>
                 CameraScene.process(delta, node, scene)
             case EngineNode.CanvasLayerWithState(_, NodeTag.GameOverAnim(_)) =>
                 GameOverScene.process(delta, node, scene)
@@ -259,7 +259,7 @@ mod Game {
         let scene = Scene.empty()
             |> addBackground
             |> BirdScene.addBird
-            |> CameraScene.addCamera
+            |> CameraScene.addCamera(BirdScene.name())
             |> ScoreScene.addHud(fontAtlas, bestScore)
             |> GroundScene.addGrounds
             |> PipeScene.addPipes;
@@ -271,7 +271,7 @@ mod Game {
         let scene = Scene.empty()
             |> addBackground
             |> BirdScene.addBirdForMenu
-            |> CameraScene.addCamera
+            |> CameraScene.addCamera(BirdScene.name())
             |> ScoreScene.addHud(fontAtlas, bestScore)
             |> GroundScene.addGrounds
             |> MenuScene.addMenuUI
