@@ -49,9 +49,7 @@ mod BirdScene {
     /// 鳥の状態データ（フレーム間で変化する純粋データ）
     /// state: 鳥の状態マシン
     /// speed: 横方向の移動速度（px/秒）
-    /// flapJustPressed: 今フレームの input イベントで flap が押されたか（フェーズ遷移検出用）
-    ///                  gameLoop がフレーム冒頭で false にクリアし、emitInput → BirdScene.input が押下時に true をセットする
-    pub type alias BirdData = {state = BirdState, speed = Float64, flapJustPressed = Bool}
+    pub type alias BirdData = {state = BirdState, speed = Float64}
 
     // ========================================================================
     // 定数 — ノード名・パス
@@ -140,7 +138,7 @@ mod BirdScene {
             Vec2.zero(),
             {x = 2.0, y = 2.0});
         let area = Area2D.make(Vec2.zero(), birdCollisionShape());
-        let birdData: BirdData = {state = BirdState.Flapping, speed = birdSpeed(), flapJustPressed = false};
+        let birdData: BirdData = {state = BirdState.Flapping, speed = birdSpeed()};
         scene
             |> Scene.addNode(name(),
                 EngineNode.RigidBody2DWithState(body, NodeTag.Bird(birdData)))
@@ -162,7 +160,7 @@ mod BirdScene {
             Vec2.zero(),
             {x = 2.0, y = 2.0});
         let area = Area2D.make(Vec2.zero(), birdCollisionShape());
-        let birdData: BirdData = {state = BirdState.Flying, speed = 0.0, flapJustPressed = false};
+        let birdData: BirdData = {state = BirdState.Flying, speed = 0.0};
         scene
             |> Scene.addNode(name(),
                 EngineNode.RigidBody2DWithState(body, NodeTag.Bird(birdData)))
@@ -172,16 +170,6 @@ mod BirdScene {
                 EngineNode.Area2DWithState(area, NodeTag.BirdArea))
 
  
-    // ========================================================================
-    // flapJustPressed フラグ管理
-    // ========================================================================
-
-    /// flapJustPressed フラグをクリアする
-    /// gameLoop が毎フレーム冒頭で呼ぶ。emitInput → BirdScene.input が押下時に再セットする
-    pub def clearFlapJustPressed(scene: Scene[NodeTag]): Scene[NodeTag] =
-        scene |> mapBirdBody((body, birdData) ->
-            (body, {flapJustPressed = false | birdData}))
-
     // ========================================================================
     // physicsProcess コールバック（bird.gd _physics_process 相当）
     // ========================================================================
@@ -229,34 +217,30 @@ mod BirdScene {
         }
 
     /// input ディスパッチャ — bird.gd `_input(event) → state.input(event)` 相当
-    /// キーボード・マウス両方を統一的に扱い、状態ごとに per-state input 関数にディスパッチ。
-    /// flap 入力検出時は flapJustPressed を立て、Flapping 状態では追加で flap 動作を実行する。
-    /// Godot は Flapping 以外の状態の input は no-op だが、Flix 移植では Play ボタン UI 代替として
-    /// メニュー / GameOver の遷移トリガに flapJustPressed を使うため flag だけ立てる。
+    /// Flapping 状態のみ flap 動作を実行し、他の状態は Godot に倣い no-op。
+    /// メニュー / GameOver の遷移は Play ボタンクリック（MenuScene / GameOverScene）が担当する。
     pub def input(event: BirdInputEvent, scene: Scene[NodeTag]): Scene[NodeTag] \ GameEngine.Audio =
         let isFlapAction = match event {
             case BirdInputEvent.KeyPressed(GameEngine.Key.Space) => true
             case BirdInputEvent.MouseButtonPressed(GameEngine.MouseButton.Left) => true
             case _ => false
         };
-        if (not isFlapAction) scene
-        else match getBirdData(scene)#state {
+        match getBirdData(scene)#state {
             case BirdState.Flapping =>
-                // bird.gd FlappingState.input → flap() インライン展開:
-                //   bird.set_linear_velocity(Vector2(bird.get_linear_velocity().x, -150))
-                //   bird.set_angular_velocity(-3)
-                //   bird.get_node("sfx_wing").play()
-                GameEngine.Audio.playAudio("sfx_wing");
-                scene |> mapBirdBody((body, birdData) ->
-                    let vel = RigidBody2D.getLinearVelocity(body);
-                    (body
-                        |> RigidBody2D.setLinearVelocity({x = vel#x, y = flapVelocityY()})
-                        |> RigidBody2D.setAngularVelocity(flapAngularVelocity()),
-                    {flapJustPressed = true | birdData}))
-            case _ =>
-                // Flying / Hit / Grounded: フェーズ遷移トリガ用に flag だけ立てる
-                scene |> mapBirdBody((body, birdData) ->
-                    (body, {flapJustPressed = true | birdData}))
+                if (isFlapAction) {
+                    // bird.gd FlappingState.input → flap() インライン展開:
+                    //   bird.set_linear_velocity(Vector2(bird.get_linear_velocity().x, -150))
+                    //   bird.set_angular_velocity(-3)
+                    //   bird.get_node("sfx_wing").play()
+                    GameEngine.Audio.playAudio("sfx_wing");
+                    scene |> mapBirdBody((body, birdData) ->
+                        let vel = RigidBody2D.getLinearVelocity(body);
+                        (body
+                            |> RigidBody2D.setLinearVelocity({x = vel#x, y = flapVelocityY()})
+                            |> RigidBody2D.setAngularVelocity(flapAngularVelocity()),
+                        birdData))
+                } else scene
+            case _ => scene
         }
 
     // ========================================================================

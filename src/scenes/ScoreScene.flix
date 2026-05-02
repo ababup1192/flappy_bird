@@ -75,23 +75,26 @@ mod ScoreScene {
             case _ => bug!("best_score_label not found")
         }
 
-    /// スコアを 1 加算し、ラベルテキストも同時に更新する
-    pub def incrementScore(scene: Scene[NodeTag]): Scene[NodeTag] =
-        let newScore = getScore(scene) + 1;
+    /// スコアを指定値に更新する（NodeTag とラベルテキストの両方）
+    pub def setScore(score: Score, scene: Scene[NodeTag]): Scene[NodeTag] =
         Scene.mapEngineNode(scoreLabelPath(), engineNode -> match engineNode {
             case EngineNode.Label2DWithState(label, NodeTag.ScoreLabel(_)) =>
                 EngineNode.Label2DWithState(
-                    Label2D.setText("${newScore}", label),
-                    NodeTag.ScoreLabel(newScore))
+                    Label2D.setText("${score}", label),
+                    NodeTag.ScoreLabel(score))
             case other => other
         }, scene)
 
-    /// 現在のスコアでベストスコアを更新し、(score, bestScore, scene) を返す
-    pub def finalizeScore(scene: Scene[NodeTag]): (Score, BestScore, Scene[NodeTag]) =
+    /// スコアを 1 加算し、ラベルテキストも同時に更新する
+    pub def incrementScore(scene: Scene[NodeTag]): Scene[NodeTag] =
+        setScore(getScore(scene) + 1, scene)
+
+    /// 現在のスコアでベストスコアを更新する（max を取って setBestScore）
+    pub def finalizeScore(scene: Scene[NodeTag]): Scene[NodeTag] =
         let score = getScore(scene);
         let currentBest = getBestScore(scene);
         let newBest = Int32.max(score, currentBest);
-        (score, newBest, setBestScore(newBest, scene))
+        setBestScore(newBest, scene)
 
     /// ベストスコアを更新する
     pub def setBestScore(bestScore: BestScore, scene: Scene[NodeTag]): Scene[NodeTag] =

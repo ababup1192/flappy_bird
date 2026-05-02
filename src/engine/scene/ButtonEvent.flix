@@ -17,7 +17,7 @@ pub mod ButtonEvent {
         pub def onButtonPressed(_buttonPath: NodePath, _state: s, scene: Scene[s]): Scene[s] = scene
     }
 
-    /// マウス状態を全 ButtonWithState に反映する
+    /// マウス状態を全 ButtonWithState / TextureButtonWithState に反映する
     pub def updateButtons(scene: Scene[s]): Scene[s] \ GameEngine.Game =
         let mousePos = GameEngine.Game.getMousePosition();
         let mousePressed = GameEngine.Game.isMouseButtonPressed(GameEngine.MouseButton.Left);
@@ -31,12 +31,19 @@ pub mod ButtonEvent {
                         let newBtn = Button.updateInteraction(mousePos, mousePressed, globalPos, btn);
                         Scene.mapEngineNode(path, EngineNode.mapButton(_ -> newBtn), sc)
                     }
+                case Some(EngineNode.TextureButtonWithState(btn, _)) =>
+                    if (not CanvasItem.isVisible(btn)) sc
+                    else {
+                        let globalPos = Scene.globalPositionAt(path, sc);
+                        let newBtn = TextureButton.updateInteraction(mousePos, mousePressed, globalPos, btn);
+                        Scene.mapEngineNode(path, EngineNode.mapTextureButton(_ -> newBtn), sc)
+                    }
                 case _ => sc
             },
             scene,
             paths)
 
-    /// justPressed=true の ButtonWithState ノードパスを収集する
+    /// justPressed=true のボタンノードパスを収集する（Button / TextureButton 両対応）
     pub def detectPressedPaths(scene: Scene[s]): List[NodePath] =
         let paths = Scene.preorderPaths(scene);
         List.filterMap(path ->
@@ -44,13 +51,22 @@ pub mod ButtonEvent {
                 case Some(EngineNode.ButtonWithState(btn, _)) =>
                     if (Button.isJustPressed(btn)) Some(path)
                     else None
+                case Some(EngineNode.TextureButtonWithState(btn, _)) =>
+                    if (TextureButton.isJustPressed(btn)) Some(path)
+                    else None
                 case _ => None
             }, paths)
 
-    /// justPressed フラグをクリアする
+    /// justPressed フラグをクリアする（Button / TextureButton 両対応）
     def clearJustPressed(paths: List[NodePath], scene: Scene[s]): Scene[s] =
         List.foldLeft((sc, path) ->
-            Scene.mapEngineNode(path, EngineNode.mapButton(Button.clearJustPressed), sc),
+            match Scene.getEngineNode(path, sc) {
+                case Some(EngineNode.ButtonWithState(_, _)) =>
+                    Scene.mapEngineNode(path, EngineNode.mapButton(Button.clearJustPressed), sc)
+                case Some(EngineNode.TextureButtonWithState(_, _)) =>
+                    Scene.mapEngineNode(path, EngineNode.mapTextureButton(TextureButton.clearJustPressed), sc)
+                case _ => sc
+            },
             scene,
             paths)
 

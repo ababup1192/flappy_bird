@@ -844,30 +844,6 @@ def testNoMedalZero(): Unit \ Assert =
     Assert.assertEq(expected = (None: Option[String]), GameOverScene.getMedalTexture(0))
 
 // ========================================================================
-// Phase 6: GameOverScene — Play ボタン判定
-// ========================================================================
-
-/// ボタン中央をクリック → true
-@Test
-def testPlayButtonClickCenter(): Unit \ Assert =
-    Assert.assertTrue(GameOverScene.isPlayButtonClicked({x = 144.0, y = 390.0}))
-
-/// ボタン範囲内（右端ギリギリ）→ true
-@Test
-def testPlayButtonClickInBounds(): Unit \ Assert =
-    Assert.assertTrue(GameOverScene.isPlayButtonClicked({x = 196.0, y = 419.0}))
-
-/// ボタン範囲外（右に大きくずれ）→ false
-@Test
-def testPlayButtonClickOutOfBoundsRight(): Unit \ Assert =
-    Assert.assertFalse(GameOverScene.isPlayButtonClicked({x = 250.0, y = 390.0}))
-
-/// ボタン範囲外（下に大きくずれ）→ false
-@Test
-def testPlayButtonClickOutOfBoundsBelow(): Unit \ Assert =
-    Assert.assertFalse(GameOverScene.isPlayButtonClicked({x = 144.0, y = 460.0}))
-
-// ========================================================================
 // Phase 6: GameOverScene — UI ノード構築
 // ========================================================================
 
@@ -875,33 +851,39 @@ def testPlayButtonClickOutOfBoundsBelow(): Unit \ Assert =
 ///   gameover(layer) + gameover_label + score_panel + final_score + best_score + play_button = 6
 @Test
 def testGameOverUINodeCountNoMedal(): Unit \ Assert =
-    let baseScene = testScene();
+    let baseScene = testScene()
+        |> ScoreScene.setScore(5)
+        |> ScoreScene.setBestScore(0);
     let baseCount = Scene.nodeCount(baseScene);
-    let scene = GameOverScene.addGameOverUI(5, 0, testFontAtlas(), baseScene);
+    let scene = GameOverScene.addGameOverUI(testFontAtlas(), baseScene);
     Assert.assertEq(expected = 6, Scene.nodeCount(scene) - baseCount)
 
 /// addGameOverUI で score >= 10 の場合、7 ノード追加される（メダルあり）
 ///   gameover(layer) + gameover_label + score_panel + medal + final_score + best_score + play_button = 7
 @Test
 def testGameOverUINodeCountWithMedal(): Unit \ Assert =
-    let baseScene = testScene();
+    let baseScene = testScene()
+        |> ScoreScene.setScore(15)
+        |> ScoreScene.setBestScore(15);
     let baseCount = Scene.nodeCount(baseScene);
-    let scene = GameOverScene.addGameOverUI(15, 15, testFontAtlas(), baseScene);
+    let scene = GameOverScene.addGameOverUI(testFontAtlas(), baseScene);
     Assert.assertEq(expected = 7, Scene.nodeCount(scene) - baseCount)
 
 /// 今回のスコアが低くても bestScore >= 10 ならメダルが表示されること（メダル永続化）
 ///   score=3, bestScore=15 → bronze メダルが表示される → 7 ノード追加
 @Test
 def testGameOverUINodeCountMedalFromBestScore(): Unit \ Assert =
-    let baseScene = testScene();
+    let baseScene = testScene()
+        |> ScoreScene.setScore(3)
+        |> ScoreScene.setBestScore(15);
     let baseCount = Scene.nodeCount(baseScene);
-    let scene = GameOverScene.addGameOverUI(3, 15, testFontAtlas(), baseScene);
+    let scene = GameOverScene.addGameOverUI(testFontAtlas(), baseScene);
     Assert.assertEq(expected = 7, Scene.nodeCount(scene) - baseCount)
 
 /// addGameOverUI 後に HUD スコアラベルが非表示になること
 @Test
 def testGameOverHidesHudScore(): Unit \ Assert =
-    let scene = GameOverScene.addGameOverUI(0, 0, testFontAtlas(), testScene());
+    let scene = GameOverScene.addGameOverUI(testFontAtlas(), testScene());
     match Scene.getEngineNode(ScoreScene.scoreLabelPath(), scene) {
         case Some(EngineNode.Label2DWithState(label, _)) =>
             Assert.assertFalse(CanvasItem.isVisible(label))
@@ -994,12 +976,12 @@ def testMenuHasGrounds(): Unit \ Assert =
     let paths = Scene.getNodesInGroup(GroundScene.groundGroup(), testMenuScene());
     Assert.assertEq(expected = 2, List.length(paths))
 
-/// メニュー画面のノード数は 16
+/// メニュー画面のノード数は 17
 ///   background(+bg_sprite) + bird(+sprite+area) + camera + hud(+score_label+best_score_label)
-///   + ground_0(+sprite) + ground_1(+sprite) + menu(+title_logo+instructions_img) = 16
+///   + ground_0(+sprite) + ground_1(+sprite) + menu(+title_logo+instructions_img+play_button) = 17
 @Test
 def testMenuNodeCount(): Unit \ Assert =
-    Assert.assertEq(expected = 16, Scene.nodeCount(testMenuScene()))
+    Assert.assertEq(expected = 17, Scene.nodeCount(testMenuScene()))
 
 /// メニュー画面では鳥は静止する（bird.gd 忠実化により bobbing は削除済み。
 /// Godot ではアニメーションで実現される視覚効果だが Flix エンジンに該当機能なし）

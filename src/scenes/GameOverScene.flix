@@ -5,12 +5,12 @@
 // 子ノードは初期非表示で追加され、GameOverAnim state の経過時間に応じて段階的に表示される。
 //
 //   CanvasLayerWithState(gameover, GameOverAnim({elapsed = 0.0}))
-//     ├── Sprite2DWithState(gameover_label, NoTag)     // "GAME OVER" ラベル
-//     ├── Sprite2DWithState(score_panel, NoTag)        // スコアパネル背景
-//     ├── Sprite2DWithState(medal, NoTag)              // メダル（score>=10 のみ）
-//     ├── Label2DWithState(final_score, NoTag)         // パネル上のスコア数値
-//     ├── Label2DWithState(best_score, NoTag)          // パネル上のベストスコア数値
-//     └── Sprite2DWithState(play_button, NoTag)        // Play ボタン
+//     ├── Sprite2DWithState(gameover_label, NoTag)              // "GAME OVER" ラベル
+//     ├── Sprite2DWithState(score_panel, NoTag)                 // スコアパネル背景
+//     ├── Sprite2DWithState(medal, NoTag)                       // メダル（score>=10 のみ）
+//     ├── Label2DWithState(final_score, NoTag)                  // パネル上のスコア数値
+//     ├── Label2DWithState(best_score, NoTag)                   // パネル上のベストスコア数値
+//     └── TextureButtonWithState(play_button, PlayButton(...))   // Play ボタン
 
 mod GameOverScene {
 
@@ -65,18 +65,14 @@ mod GameOverScene {
     /// ベストスコアの位置（パネル右下、"BEST" テキストと同じ行）
     def bestScorePos(): Vec2.Vec2 = {x = 218.0, y = 295.0}
 
-    /// Play ボタンの位置
+    /// Play ボタンの位置（中心座標）
     def playButtonPos(): Vec2.Vec2 = {x = 144.0, y = 390.0}
 
-    // ========================================================================
-    // 定数 — ボタンサイズ
-    // ========================================================================
+    /// Play ボタンサイズ（button_play_normal 52x29 px × 2x スケール = 104x58）
+    def playButtonSize(): Vec2.Vec2 = {x = 104.0, y = 58.0}
 
-    /// Play ボタンの半幅（52px × 2x スケール / 2）
-    def buttonHalfW(): Float64 = 52.0
-
-    /// Play ボタンの半高（29px × 2x スケール / 2）
-    def buttonHalfH(): Float64 = 29.0
+    /// Play ボタンのパス
+    pub def playButtonPath(): NodePath = layerName() :: playButtonName() :: Nil
 
     // ========================================================================
     // 2x スケール
@@ -122,10 +118,13 @@ mod GameOverScene {
     // ========================================================================
 
     /// ゲームオーバー UI をシーンに追加する
+    /// score / bestScore は scene の ScoreLabel / BestScoreLabel から読み出す
     /// CanvasLayer (layer=2) に GAME OVER ラベル、スコアパネル、メダル、スコア/ベストスコア数値、Play ボタンを配置する
     /// 全子ノードは初期非表示で追加され、アニメーションで段階的に表示される
     /// HUD のスコアラベルを非表示にする
-    pub def addGameOverUI(score: Score, bestScore: BestScore, fontAtlas: FontAtlas, scene: Scene[NodeTag]): Scene[NodeTag] =
+    pub def addGameOverUI(fontAtlas: FontAtlas, scene: Scene[NodeTag]): Scene[NodeTag] =
+        let score = ScoreScene.getScore(scene);
+        let bestScore = ScoreScene.getBestScore(scene);
         let layer = CanvasLayer.make(2);
         let gameOverLabel = Sprite2D.make("label_game_over", gameOverLabelPos(), scale2x())
             |> CanvasItem.hide;
@@ -141,7 +140,11 @@ mod GameOverScene {
             |> Node2D.setPosition(bestScorePos())
             |> CanvasItem.setZIndex(1)
             |> CanvasItem.hide;
-        let playButton = Sprite2D.make("button_play_normal", playButtonPos(), scale2x())
+        let playButton = TextureButton.make("button_play_normal", playButtonSize())
+            |> TextureButton.setTexturePressed("button_play_pressed")
+            |> TextureButton.setCentered(true)
+            |> Node2D.setPosition(playButtonPos())
+            |> Node2D.setScale(scale2x())
             |> CanvasItem.hide;
         let sceneWithLayer = scene
             // HUD のスコアラベルを非表示にする
@@ -160,7 +163,7 @@ mod GameOverScene {
             |> Scene.addChild(layerName(), bestScoreName(),
                 EngineNode.Label2DWithState(bestLabel, NodeTag.NoTag))
             |> Scene.addChild(layerName(), playButtonName(),
-                EngineNode.Sprite2DWithState(playButton, NodeTag.NoTag));
+                EngineNode.TextureButtonWithState(playButton, NodeTag.PlayButton({pressed = false})));
         // メダルを追加（bestScore >= 10 の場合のみ、非表示で追加）
         // bestScore を使うことで、一度取得したメダルは以降も表示され続け、
         // ベストスコア更新時に新しいメダルに差し替わる
@@ -225,14 +228,12 @@ mod GameOverScene {
         }
 
     // ========================================================================
-    // ボタン判定
+    // Play ボタン押下管理（ButtonHandler が NodeTag.PlayButton.pressed=true をセット）
     // ========================================================================
 
-    /// マウス座標が Play ボタンの矩形内にあるか判定する
-    /// button_play_normal は 52x29 px、2x スケールで 104x58
-    pub def isPlayButtonClicked(mousePos: Vec2.Vec2): Bool =
-        let center = playButtonPos();
-        let dx = Float64.abs(mousePos#x - center#x);
-        let dy = Float64.abs(mousePos#y - center#y);
-        dx <= buttonHalfW() and dy <= buttonHalfH()
+    pub def isPlayButtonPressed(scene: Scene[NodeTag]): Bool =
+        MenuScene.getPlayButtonData(playButtonPath(), scene)#pressed
+
+    pub def clearPlayButton(scene: Scene[NodeTag]): Scene[NodeTag] =
+        MenuScene.mapPlayButton(playButtonPath(), (btn, _) -> (btn, {pressed = false}), scene)
 }
