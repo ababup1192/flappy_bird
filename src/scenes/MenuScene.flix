@@ -1,7 +1,7 @@
 // MenuScene — メニュー画面の構築
 //
 // CanvasLayer (layer=2) の子としてタイトルロゴ・操作説明画像・Play ボタンを配置する。
-// Play ボタン押下時の遷移は Game の ButtonHandler が StageRequested を発火することで処理する。
+// Play ボタン押下時の遷移は Game の ButtonHandler が Phase.request(Playing) することで処理する。
 // メニュー → プレイ画面への切替は Scene 全体を作り直す方式のため、ここに削除処理は持たない。
 //
 //   CanvasLayerWithState(menu, NoTag)  [layer=2]

@@ -59,9 +59,9 @@ def testFontAtlas(): FontAtlas = {
     glyphs = Map.empty()
 }
 
-/// テスト用ヘルパー: buildState のシーンを取得（Math.Random をモックで処理）
+/// テスト用ヘルパー: buildPlayingScene のシーンを取得（Math.Random をモックで処理）
 def testScene(): Scene[NodeTag] =
-    withMockRandom(() -> Game.buildState(testFontAtlas(), 0))
+    withMockRandom(() -> Game.buildPlayingScene(testFontAtlas(), 0))
 
 /// Vec2 をタプルに変換するヘルパー
 def vecToTuple(v: Vec2.Vec2): (Float64, Float64) = (v#x, v#y)
@@ -82,7 +82,7 @@ def runFlap(scene: Scene[NodeTag]): Scene[NodeTag] =
     withMockAudio(() -> BirdScene.input(BirdInputEvent.KeyPressed(GameEngine.Key.Space), scene))
 
 // ========================================================================
-// buildState: ノード数・構造
+// buildPlayingScene: ノード数・構造
 // ========================================================================
 
 /// シーンには bird(+sprite+area) + camera + background(+bg_sprite)
@@ -937,18 +937,18 @@ def testGameOverHidesHudScore(): Unit \ Assert =
         case _ => bug!("score_label not found")
     }
 
-/// buildState のノード数は GameOver UI 追加前と同じ（31）
+/// buildPlayingScene のノード数は GameOver UI 追加前と同じ（31）
 @Test
-def testBuildStateNodeCountUnchanged(): Unit \ Assert =
+def testBuildPlayingSceneNodeCountUnchanged(): Unit \ Assert =
     Assert.assertEq(expected = 31, Scene.nodeCount(testScene()))
 
 // ========================================================================
 // Phase 7: MenuScene — メニュー画面
 // ========================================================================
 
-/// テスト用ヘルパー: buildMenuState のシーンを取得
+/// テスト用ヘルパー: buildMenuScene のシーンを取得
 def testMenuScene(): Scene[NodeTag] =
-    Game.buildMenuState(testFontAtlas(), 0)
+    Game.buildMenuScene(testFontAtlas(), 0)
 
 /// メニュー画面の鳥の状態は Flying
 @Test

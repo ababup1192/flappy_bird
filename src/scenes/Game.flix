@@ -14,10 +14,13 @@ pub enum GamePhase with Eq, ToString {
     case GameOver
 }
 
-/// ステージ遷移要求イベント（godot stage_manager.change_stage 相当）
-/// InputHandler / ButtonHandler から発火し、gameLoop が次フレームで処理する
-pub eff StageRequested {
-    def emit(target: GamePhase): Unit
+/// ゲームフェーズの読み書きエフェクト（真値）
+/// `get` : 現在のフェーズを取得
+/// `set` : フェーズを変更（同一フレーム内に複数回呼ばれた場合は最後勝ち）
+/// 「フェーズ変化に応じた scene 構築」は gameLoop が前フレームとの比較で実行する
+pub eff Phase {
+    def get(): GamePhase
+    def set(target: GamePhase): Unit
 }
 
 // ========================================================================
@@ -107,34 +110,33 @@ instance Node[NodeTag] {
 // ========================================================================
 
 instance InputEvent.InputHandler[NodeTag] {
-    type Aef = { GameEngine.Audio, StageRequested }
+    type Aef = { GameEngine.Audio, Phase }
     redef onKeyPressed(key: GameEngine.Key,
-                       scene: Scene[NodeTag]): Scene[NodeTag] \ {GameEngine.Audio, StageRequested} =
+                       scene: Scene[NodeTag]): Scene[NodeTag] \ {GameEngine.Audio, Phase} =
         if (key == GameEngine.Key.Space and Game.canStart(scene)) {
-            StageRequested.emit(GamePhase.Playing); scene
+            Phase.set(GamePhase.Playing); scene
         } else
-            BirdScene.input(BirdInputEvent.KeyPressed(key), scene)
+            checked_ecast(BirdScene.input(BirdInputEvent.KeyPressed(key), scene))
 
     redef onMouseButtonPressed(button: GameEngine.MouseButton,
                                _position: Vec2.Vec2,
-                               scene: Scene[NodeTag]): Scene[NodeTag] \ {GameEngine.Audio, StageRequested} =
+                               scene: Scene[NodeTag]): Scene[NodeTag] \ {GameEngine.Audio, Phase} =
         checked_ecast(BirdScene.input(BirdInputEvent.MouseButtonPressed(button), scene))
 }
 
 // ========================================================================
 // ButtonHandler 実装（Godot TextureButton.pressed シグナル相当）
-// godot btn_play.gd と同じく、押下時に直接 stage_manager.change_stage(...) 相当の
-// StageRequested.emit(...) を発火する
+// godot btn_play.gd と同じく、押下時に Phase.set(Playing) を発火する
 // ========================================================================
 
 instance ButtonEvent.ButtonHandler[NodeTag] {
-    type Aef = { StageRequested }
+    type Aef = { Phase }
     redef onButtonPressed(buttonPath: NodePath, _state: NodeTag,
-                          scene: Scene[NodeTag]): Scene[NodeTag] \ StageRequested =
+                          scene: Scene[NodeTag]): Scene[NodeTag] \ Phase =
         let isPlayPath = buttonPath == MenuScene.playButtonPath()
                          or buttonPath == GameOverScene.playButtonPath();
         if (isPlayPath and Game.canStart(scene)) {
-            StageRequested.emit(GamePhase.Playing); scene
+            Phase.set(GamePhase.Playing); scene
         } else scene
 }
 
@@ -215,20 +217,21 @@ mod Game {
     // ========================================================================
 
     /// ゲーム開始入力を受け付けるか判定する
-    /// GameOver 表示中: アニメ完了後 / それ以外: パイプが無いとき (= Menu)
-    pub def canStart(scene: Scene[NodeTag]): Bool =
-        if (GameOverScene.isActive(scene))
-            GameOverScene.isAnimationFinished(scene)
-        else
-            Scene.getNodesInGroup(PipeScene.pipeGroup(), scene) |> List.isEmpty
+    /// Menu: 常に true / Playing: false / GameOver: アニメ完了後のみ true
+    pub def canStart(scene: Scene[NodeTag]): Bool \ Phase =
+        match Phase.get() {
+            case GamePhase.Menu     => true
+            case GamePhase.Playing  => false
+            case GamePhase.GameOver => GameOverScene.isAnimationFinished(scene)
+        }
 
     // ========================================================================
     // 初期状態構築
     // ========================================================================
 
-    /// ゲームの初期シーンを構築する
+    /// プレイ中のシーンを構築する（Phase Playing 用）
     /// bestScore: セッション中のベストスコア（初回は 0）
-    pub def buildState(fontAtlas: FontAtlas, bestScore: BestScore): Scene[NodeTag] \ Math.Random =
+    pub def buildPlayingScene(fontAtlas: FontAtlas, bestScore: BestScore): Scene[NodeTag] \ Math.Random =
         Scene.empty()
             |> addBackground
             |> BirdScene.addBird
@@ -237,9 +240,9 @@ mod Game {
             |> GroundScene.addGrounds
             |> PipeScene.addPipes
 
-    /// メニュー画面の初期シーンを構築する
+    /// メニュー画面のシーンを構築する（Phase Menu 用）
     /// 背景 + 鳥(Flying) + カメラ + HUD(スコア非表示) + 地面 + メニュー UI
-    pub def buildMenuState(fontAtlas: FontAtlas, bestScore: BestScore): Scene[NodeTag] =
+    pub def buildMenuScene(fontAtlas: FontAtlas, bestScore: BestScore): Scene[NodeTag] =
         Scene.empty()
             |> addBackground
             |> BirdScene.addBirdForMenu
@@ -263,18 +266,6 @@ mod Game {
             |> Scene.addChild(backgroundName(), bgSpriteName(),
                 EngineNode.Sprite2DWithState(sprite, NodeTag.NoTag))
 
-    // ========================================================================
-    // エンジン更新パイプライン
-    // ========================================================================
-
-    /// エンジン更新パイプライン（input → buttons → process → physics → collision）
-    def engineUpdate(dt: Float64, scene: Scene[NodeTag]): Scene[NodeTag] \ {GameEngine.Audio, GameEngine.Game, Math.Random, BirdStateChanged, StageRequested} =
-        (GameEngine.emitInput
-        >> GameEngine.emitButtons
-        >> GameEngine.process(dt, false)
-        >> GameEngine.physicsProcess(dt, false, PhysicsStep.defaultGravity())
-        >> GameEngine.emitCollision)(scene)
-
     /// ビューポートの左端 X 座標を取得する
     pub def getViewportLeftX(scene: Scene[NodeTag]): Float64 =
         let birdPos = Scene.globalPosition(BirdScene.name(), scene);
@@ -285,14 +276,13 @@ mod Game {
     // ========================================================================
 
     /// ゲームのエントリポイント
-    /// godot の bird.state_changed + stage_manager.change_stage シグナルに対応:
-    ///   - BirdStateChanged: Hit でシェイク、Grounded でシェイク + GameOver 画面追加
-    ///   - StageRequested:   InputHandler / ButtonHandler からの遷移要求を Ref に蓄積
-    pub def start(fontAtlas: FontAtlas): Unit \ {GameEngine.Game, GameEngine.Audio, Math.Random, IO} =
+    /// Phase は region 内の Ref 1 個で保持。handler 群が `Phase.set` で書き換え、
+    /// gameLoop が前フレームとの差分を検出して scene を組み立てる。
+    pub def start(fontAtlas: FontAtlas): Unit \ {GameEngine.Game, GameEngine.Audio, Math.Random} =
         region rc {
-            let pending: Ref[Option[GamePhase], rc] = Ref.fresh(rc, None);
+            let phaseRef: Ref[GamePhase, rc] = Ref.fresh(rc, GamePhase.Menu);
             run {
-                gameLoop(fontAtlas, buildMenuState(fontAtlas, 0), pending)
+                gameLoop(fontAtlas, GamePhase.Menu, buildMenuScene(fontAtlas, 0))
             } with handler BirdStateChanged {
                 def emit(newState, scene, k) = {
                     let nextScene = match newState {
@@ -300,50 +290,54 @@ mod Game {
                             CameraScene.triggerShake(CameraScene.shakeIntensity(),
                                                      CameraScene.shakeDuration(), scene)
                         case BirdState.Grounded =>
-                            scene
-                                |> CameraScene.triggerShake(CameraScene.shakeIntensity(),
-                                                            CameraScene.shakeDuration())
-                                |> GameOverScene.enterGameOver(fontAtlas)
+                            Phase.set(GamePhase.GameOver);
+                            CameraScene.triggerShake(CameraScene.shakeIntensity(),
+                                                     CameraScene.shakeDuration(), scene)
                         case _ => scene
                     };
                     k(nextScene)
                 }
-            } with handler StageRequested {
-                def emit(target, k) = {
-                    Ref.put(Some(target), pending);
-                    k()
-                }
+            } with handler Phase {
+                def get(k) = k(Ref.get(phaseRef))
+                def set(target, k) = { Ref.put(target, phaseRef); k() }
             }
         }
 
-    /// 蓄積された遷移要求を読み出し、次のシーンを返す
-    /// Playing: シーンを作り直す。それ以外は scene をそのまま返す
-    /// （GameOver の scene 遷移は BirdStateChanged ハンドラが組み済み）
-    def applyPendingPhase(fontAtlas: FontAtlas,
-                          pending: Ref[Option[GamePhase], r],
-                          scene: Scene[NodeTag]):
-                          Scene[NodeTag] \ {GameEngine.Audio, Math.Random, r} =
-        let req = Ref.get(pending);
-        Ref.put(None, pending);
-        match req {
-            case Some(GamePhase.Playing) =>
+    /// フェーズ変化時に呼ばれる。新しい phase に応じて scene を組み立てる。
+    ///   - Playing  : フルリビルド + swoosh SE
+    ///   - Menu     : フルリビルド
+    ///   - GameOver : 既存 scene に GameOver オーバーレイを追加
+    def applyPhaseChange(phase: GamePhase, fontAtlas: FontAtlas,
+                         scene: Scene[NodeTag]): Scene[NodeTag] \ {GameEngine.Audio, Math.Random} =
+        match phase {
+            case GamePhase.Playing =>
                 GameEngine.Audio.playAudio("sfx_swooshing");
-                buildState(fontAtlas, ScoreScene.getBestScore(scene))
-            case _ => scene
+                buildPlayingScene(fontAtlas, ScoreScene.getBestScore(scene))
+            case GamePhase.Menu =>
+                buildMenuScene(fontAtlas, ScoreScene.getBestScore(scene))
+            case GamePhase.GameOver =>
+                GameOverScene.enterGameOver(fontAtlas, scene)
         }
 
-    /// メインループ: shouldClose 判定 → engineUpdate → applyPendingPhase → render
-    /// フェーズ判定はすべて handler 側に移譲。gameLoop は scene を回すだけ。
-    def gameLoop(fontAtlas: FontAtlas, scene: Scene[NodeTag], pending: Ref[Option[GamePhase], r]):
-                 Unit \ {GameEngine.Game, GameEngine.Audio, Math.Random, BirdStateChanged, StageRequested, r} =
+    /// メインループ: shouldClose 判定 → engineUpdate → phase 差分検出 → render
+    /// previousPhase: 前フレーム末の phase（変化検出のため引き連れる）
+    def gameLoop(fontAtlas: FontAtlas, previousPhase: GamePhase, scene: Scene[NodeTag]):
+                 Unit \ {GameEngine.Game, GameEngine.Audio, Math.Random, BirdStateChanged, Phase} =
         if (GameEngine.Game.shouldClose() or
             GameEngine.Game.isKeyPressed(GameEngine.Key.Escape)) ()
         else {
             let dt = GameEngine.Game.getDeltaTime();
-            let nextScene = scene
-                |> engineUpdate(dt)
-                |> applyPendingPhase(fontAtlas, pending);
+            let updatedScene = scene
+                |> GameEngine.emitInput
+                |> GameEngine.emitButtons
+                |> GameEngine.process(dt, false)
+                |> GameEngine.physicsProcess(dt, false, PhysicsStep.defaultGravity())
+                |> GameEngine.emitCollision;
+            let currentPhase = Phase.get();
+            let nextScene = if (currentPhase != previousPhase)
+                                applyPhaseChange(currentPhase, fontAtlas, updatedScene)
+                            else updatedScene;
             GameEngine.render(nextScene);
-            gameLoop(fontAtlas, nextScene, pending)
+            gameLoop(fontAtlas, currentPhase, nextScene)
         }
 }
