@@ -1,15 +1,10 @@
-/// エリア重なり検出とイベント発火（Godot Area2D シグナル準拠）
+/// エリア重なり検出と AreaHandler 発火（Godot Area2D シグナル準拠）
 /// see: https://docs.godotengine.org/ja/4.x/classes/class_area2d.html#signals
 ///
-/// 旧 Frogger エンジンの OnCollision エフェクトパターンを踏襲し、
-/// Flix の代数的エフェクトで area_entered シグナルを実現する。
-///
 /// 使い方:
-///   1. detectOverlaps で重なりペアを検出（純粋関数）
-///   2. fireAreaEnteredAll でイベントを発火（OnAreaEvent エフェクト）
-///   3. run { ... } with handler OnAreaEvent { ... } でハンドリング
-///
-/// emitOverlapEvents は 1 + 2 を一括実行するショートカット。
+///   1. ノード型に AreaHandler[s] を実装し onAreaEntered / onAreaExited を定義
+///   2. processAndEmitHandled をゲームループで呼び出す
+///   （または handleOverlaps を Scene.processAll の後で呼び出す）
 
 /// 有向オーバーラップペア (selfPath, otherPath) の集合。
 /// 前フレームの重なり状態を保持し、離脱イベントの検出に使う。
@@ -22,16 +17,11 @@ pub type alias AreaContact = {
 }
 
 /// 検出された重なり 1 件分。
-/// selfPath 側の areaEntered が発火される。
+/// selfPath 側の onAreaEntered が発火される。
 pub type alias AreaOverlap = {
     selfPath = NodePath,
     selfPos = Vec2.Vec2,
     other = AreaContact
-}
-
-/// エリア検知イベント（Godot area_entered シグナル相当）
-pub eff OnAreaEvent {
-    def areaEntered(selfPath: NodePath, selfPos: Vec2.Vec2, other: AreaContact): Unit
 }
 
 pub mod AreaEvent {
@@ -124,30 +114,6 @@ pub mod AreaEvent {
         }
 
     // ========================================================================
-    // イベント発火
-    // ========================================================================
-
-    /// 検出された重なりリストから OnAreaEvent.areaEntered を発火する。
-    pub def fireAreaEnteredAll(overlaps: List[AreaOverlap]): Unit \ OnAreaEvent =
-        List.forEach(ov ->
-            OnAreaEvent.areaEntered(ov#selfPath, ov#selfPos, ov#other),
-            overlaps)
-
-    /// 検出 + 発火を一括で行うショートカット。
-    pub def emitOverlapEvents(scene: Scene[s]): Unit \ OnAreaEvent =
-        detectOverlaps(scene) |> fireAreaEnteredAll
-
-    // ========================================================================
-    // Scene 統合（旧エンジン stepAndCollide 相当）
-    // ========================================================================
-
-    /// Scene.processAll + 重なりイベント発火を一括で行う。
-    pub def processAndEmit(delta: Float64, paused: Bool, scene: Scene[s]): Scene[s] \ OnAreaEvent + Node.Aef[s] with Node[s] =
-        let updated = Scene.processAll(delta, paused, scene);
-        emitOverlapEvents(updated);
-        updated
-
-    // ========================================================================
     // AreaHandler 統合（ノード主導の衝突応答）
     // ========================================================================
 
@@ -193,14 +159,4 @@ pub mod AreaEvent {
                                   scene: Scene[s]): Scene[s] \ Node.Aef[s] + AreaHandler.Aef[s]
             with Node[s], AreaHandler[s] =
         Scene.processAll(delta, paused, scene) |> handleOverlaps
-
-    // ========================================================================
-    // ヘルパー
-    // ========================================================================
-
-    /// OnAreaEvent を無視して実行する。
-    pub def runWithNoopAreaEvent(f: Unit -> a \ ef + OnAreaEvent): a \ ef =
-        run f() with handler OnAreaEvent {
-            def areaEntered(_selfPath, _selfPos, _other, k) = k(())
-        }
 }

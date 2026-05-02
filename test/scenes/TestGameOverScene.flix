@@ -29,27 +29,24 @@ def testMedalThresholds(): Unit \ Assert =
 // UI ノード構築
 // ========================================================================
 
-/// addGameOverUI は score < 10 かつ bestScore < 10 の場合、メダルなし UI で 6 ノード追加
-///   gameover(layer) + gameover_label + score_panel + final_score + best_score + play_button = 6
+/// メダルノードは「今回のスコア」「ベストスコア」のいずれかが 10 以上の時だけ追加される
+///   - score=5,  bestScore=0  → なし
+///   - score=15, bestScore=15 → あり（今回スコア）
+///   - score=3,  bestScore=15 → あり（ベストスコア由来、メダル永続化）
 @Test
-def testGameOverUINoMedal(): Unit \ Assert =
-    let baseScene = testScene()
-        |> ScoreScene.setScore(5)
-        |> ScoreScene.setBestScore(0);
-    let baseCount = Scene.nodeCount(baseScene);
-    let scene = GameOverScene.addGameOverUI(testFontAtlas(), baseScene);
-    Assert.assertEq(expected = 6, Scene.nodeCount(scene) - baseCount)
-
-/// 今回のスコアが低くても bestScore >= 10 ならメダルが追加される（メダル永続化）
-///   → gameover(layer) + label + panel + medal + final + best + play_button = 7
-@Test
-def testGameOverUIMedalFromBestScore(): Unit \ Assert =
-    let baseScene = testScene()
-        |> ScoreScene.setScore(3)
-        |> ScoreScene.setBestScore(15);
-    let baseCount = Scene.nodeCount(baseScene);
-    let scene = GameOverScene.addGameOverUI(testFontAtlas(), baseScene);
-    Assert.assertEq(expected = 7, Scene.nodeCount(scene) - baseCount)
+def testGameOverUIMedalPresence(): Unit \ Assert =
+    let medalPath = "gameover" :: "medal" :: Nil;
+    let buildWith = (score, best) ->
+        testScene()
+            |> ScoreScene.setScore(score)
+            |> ScoreScene.setBestScore(best)
+            |> GameOverScene.addGameOverUI(testFontAtlas());
+    let hasMedal = scene -> not Option.isEmpty(Scene.getEngineNode(medalPath, scene));
+    Assert.assertEq(
+        expected = (false, true, true),
+        (hasMedal(buildWith(5, 0)),
+         hasMedal(buildWith(15, 15)),
+         hasMedal(buildWith(3, 15))))
 
 /// addGameOverUI 後に HUD スコアラベルが非表示になる
 @Test
