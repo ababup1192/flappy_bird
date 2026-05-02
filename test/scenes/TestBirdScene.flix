@@ -246,7 +246,7 @@ def testHandleGroundedFreezesBird(): Unit \ Assert =
 /// Flying 状態（Menu）の鳥は Space キー入力を無視し速度ゼロのまま動かない
 /// （Flapping 状態だけが flap 動作を実行する分岐ロジック）
 @Test
-def testFlyingStateIgnoresFlapInput(): Unit \ Assert =
+def testFlyingStateIgnoresFlapInput(): Unit \ {Assert, Fs.FileRead} =
     let scene = runFlap(testMenuScene());
     match Scene.getEngineNode("bird" :: Nil, scene) {
         case Some(EngineNode.RigidBody2DWithState(body, _)) =>

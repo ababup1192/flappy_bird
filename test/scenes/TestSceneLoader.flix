@@ -1,0 +1,98 @@
+// Tests for SceneLoader — JSON ファイルからシーンを読み込んで構築する基盤の検証
+//
+// MenuScene.scene.json を直接読み込み、期待されるノード構造・パラメータが
+// 正しく EngineNode へ変換されることを確認する
+
+// ========================================================================
+// 共通ヘルパー
+// ========================================================================
+
+/// MenuScene.scene.json をテスト用に読み込んだ scene を取得する
+def loadedMenuScene(): Scene[NodeTag] \ Fs.FileRead =
+    SceneLoader.loadScene("src/scenes/MenuScene.scene.json", Scene.empty())
+
+// ========================================================================
+// 構造テスト
+// ========================================================================
+
+/// MenuScene.scene.json は menu CanvasLayer をルートに持ち、
+/// title_logo / instructions_img / play_button の 3 つの子を持つ
+/// （ノード総数 = 4）
+@Test
+def testMenuSceneJsonStructure(): Unit \ {Assert, Fs.FileRead} =
+    let scene = loadedMenuScene();
+    Assert.assertEq(
+        expected = (4, true, true, true, true),
+        (Scene.nodeCount(scene),
+         not Option.isEmpty(Scene.getEngineNode("menu" :: Nil, scene)),
+         not Option.isEmpty(Scene.getEngineNode("menu" :: "title_logo" :: Nil, scene)),
+         not Option.isEmpty(Scene.getEngineNode("menu" :: "instructions_img" :: Nil, scene)),
+         not Option.isEmpty(Scene.getEngineNode("menu" :: "play_button" :: Nil, scene))))
+
+// ========================================================================
+// CanvasLayer ビルダー
+// ========================================================================
+
+/// menu ルートは CanvasLayer で drawLayer = 2
+@Test
+def testMenuLayerIsCanvasLayer2(): Unit \ {Assert, Fs.FileRead} =
+    match Scene.getEngineNode("menu" :: Nil, loadedMenuScene()) {
+        case Some(EngineNode.CanvasLayerWithState(canvasLayer, NodeTag.NoTag)) =>
+            Assert.assertEq(expected = 2, CanvasLayer.getDrawLayer(canvasLayer))
+        case _ => bug!("menu should be CanvasLayer with NoTag")
+    }
+
+// ========================================================================
+// Sprite2D ビルダー
+// ========================================================================
+
+/// title_logo は Sprite2D で texture / pos / scale が JSON 通りに設定される
+///                                            ┌─ texture
+///                                            │             ┌─ pos
+///                                            │             │             ┌─ scale
+@Test
+def testTitleLogoSprite2D(): Unit \ {Assert, Fs.FileRead} =
+    match Scene.getEngineNode(MenuScene.titleLogoPath(), loadedMenuScene()) {
+        case Some(EngineNode.Sprite2DWithState(Sprite2D.Sprite2D(r), NodeTag.NoTag)) =>
+            Assert.assertEq(
+                expected = ("label_flappy_bird", (144.0, 140.0), (2.0, 2.0)),
+                (r#texture, (r#position#x, r#position#y), (r#scale#x, r#scale#y)))
+        case _ => bug!("title_logo should be Sprite2D with NoTag")
+    }
+
+/// instructions_img は Sprite2D で texture / pos が JSON 通りに設定される
+@Test
+def testInstructionsSprite2D(): Unit \ {Assert, Fs.FileRead} =
+    match Scene.getEngineNode(MenuScene.instructionsPath(), loadedMenuScene()) {
+        case Some(EngineNode.Sprite2DWithState(Sprite2D.Sprite2D(r), NodeTag.NoTag)) =>
+            Assert.assertEq(
+                expected = ("instructions", (144.0, 340.0)),
+                (r#texture, (r#position#x, r#position#y)))
+        case _ => bug!("instructions_img should be Sprite2D with NoTag")
+    }
+
+// ========================================================================
+// TextureButton ビルダー
+// ========================================================================
+
+/// play_button は TextureButton で textureNormal / texturePressed /
+/// pos / size / centered=true が JSON 通りに設定される
+@Test
+def testPlayButtonTextureButton(): Unit \ {Assert, Fs.FileRead} =
+    match Scene.getEngineNode(MenuScene.playButtonPath(), loadedMenuScene()) {
+        case Some(EngineNode.TextureButtonWithState(button, NodeTag.NoTag)) =>
+            let TextureButton.TextureButton(r) = button;
+            let pressedTexture = match r#texturePressed {
+                case Some(t) => t
+                case None    => bug!("play_button should have texturePressed")
+            };
+            let pos = Node2D.getPosition(button);
+            let size = TextureButton.getSize(button);
+            Assert.assertEq(
+                expected = ("button_play_normal", "button_play_pressed",
+                            (144.0, 440.0), (104.0, 58.0), true),
+                (r#textureNormal, pressedTexture,
+                 (pos#x, pos#y), (size#x, size#y),
+                 TextureButton.isCentered(button)))
+        case _ => bug!("play_button should be TextureButton with NoTag")
+    }

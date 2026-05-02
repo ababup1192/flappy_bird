@@ -55,8 +55,8 @@ def testFontAtlas(): FontAtlas = {
 def testScene(): Scene[NodeTag] =
     withMockRandom(() -> Game.buildPlayingScene(testFontAtlas(), 0))
 
-/// buildMenuScene のシーンを取得
-def testMenuScene(): Scene[NodeTag] =
+/// buildMenuScene のシーンを取得（MenuScene.scene.json を読み込むため Fs.FileRead を伴う）
+def testMenuScene(): Scene[NodeTag] \ Fs.FileRead =
     Game.buildMenuScene(testFontAtlas(), 0)
 
 /// Vec2 をタプルに変換するヘルパー

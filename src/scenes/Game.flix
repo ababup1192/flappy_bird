@@ -249,7 +249,8 @@ mod Game {
 
     /// メニュー画面のシーンを構築する（Phase Menu 用）
     /// 背景 + 鳥(Flying) + カメラ + HUD(スコア非表示) + 地面 + メニュー UI
-    pub def buildMenuScene(fontAtlas: FontAtlas, bestScore: BestScore): Scene[NodeTag] =
+    /// MenuScene.addMenuUI が JSON ファイル読み込みを行うため Fs.FileRead を伴う
+    pub def buildMenuScene(fontAtlas: FontAtlas, bestScore: BestScore): Scene[NodeTag] \ Fs.FileRead =
         Scene.empty()
             |> addBackground
             |> BirdScene.addBirdForMenu
@@ -287,7 +288,7 @@ mod Game {
     /// gameLoop が前フレームとの差分を検出して scene を組み立てる。
     /// Recycle ハンドラはノード自殺時のリサイクル要求を Math.Random + spawn 関数で
     /// 実体化する責務を担う（NodeRemovedHandler から Math.Random を切り離すため）。
-    pub def start(fontAtlas: FontAtlas): Unit \ {GameEngine.Game, GameEngine.Audio, Math.Random} =
+    pub def start(fontAtlas: FontAtlas): Unit \ {GameEngine.Game, GameEngine.Audio, Math.Random, Fs.FileRead} =
         region rc {
             let phaseRef: Ref[GamePhase, rc] = Ref.fresh(rc, GamePhase.Menu);
             run {
@@ -321,7 +322,7 @@ mod Game {
     ///   - Menu     : フルリビルド
     ///   - GameOver : 既存 scene に GameOver オーバーレイを追加
     def applyPhaseChange(phase: GamePhase, fontAtlas: FontAtlas,
-                         scene: Scene[NodeTag]): Scene[NodeTag] \ {GameEngine.Audio, Math.Random} =
+                         scene: Scene[NodeTag]): Scene[NodeTag] \ {GameEngine.Audio, Math.Random, Fs.FileRead} =
         match phase {
             case GamePhase.Playing =>
                 GameEngine.Audio.playAudio("sfx_swooshing");
@@ -335,7 +336,7 @@ mod Game {
     /// メインループ: shouldClose 判定 → engineUpdate → phase 差分検出 → render
     /// previousPhase: 前フレーム末の phase（変化検出のため引き連れる）
     def gameLoop(fontAtlas: FontAtlas, previousPhase: GamePhase, scene: Scene[NodeTag]):
-                 Unit \ {GameEngine.Game, GameEngine.Audio, Math.Random, BirdStateChanged, Phase, Recycle} =
+                 Unit \ {GameEngine.Game, GameEngine.Audio, Math.Random, Fs.FileRead, BirdStateChanged, Phase, Recycle} =
         if (GameEngine.Game.shouldClose() or
             GameEngine.Game.isKeyPressed(GameEngine.Key.Escape)) ()
         else {

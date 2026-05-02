@@ -4,6 +4,9 @@
 // Play ボタン押下時の遷移は Game の ButtonHandler が Phase.request(Playing) することで処理する。
 // メニュー → プレイ画面への切替は Scene 全体を作り直す方式のため、ここに削除処理は持たない。
 //
+// シーン構造の宣言は src/scenes/MenuScene.scene.json に外出ししてある。
+// 構造を編集したいときは JSON を直接書き換える（ホットリロード基盤の Phase 1）。
+//
 //   CanvasLayerWithState(menu, NoTag)  [layer=2]
 //     ├── Sprite2DWithState(title_logo, NoTag)                  // label_flappy_bird (y=140)
 //     ├── Sprite2DWithState(instructions_img, NoTag)            // instructions (y=340)
@@ -36,42 +39,17 @@ mod MenuScene {
     pub def playButtonPath(): NodePath = layerName() :: playButtonName() :: Nil
 
     // ========================================================================
-    // 定数 — 位置・サイズ・スケール
+    // シーン定義 JSON のパス
     // ========================================================================
 
-    def titleLogoPos(): Vec2.Vec2 = {x = 144.0, y = 140.0}
-    def instructionsPos(): Vec2.Vec2 = {x = 144.0, y = 340.0}
-
-    /// Play ボタンの位置（中心座標）
-    def playButtonPos(): Vec2.Vec2 = {x = 144.0, y = 440.0}
-
-    /// Play ボタンサイズ（button_play_normal 52x29 px × 2x スケール = 104x58）
-    def playButtonSize(): Vec2.Vec2 = {x = 104.0, y = 58.0}
-
-    /// 共通の 2x スケール
-    def scale2x(): Vec2.Vec2 = {x = 2.0, y = 2.0}
+    /// メニュー UI のシーン定義 JSON ファイルのパス
+    def sceneJsonPath(): String = "src/scenes/MenuScene.scene.json"
 
     // ========================================================================
     // シーン構築
     // ========================================================================
 
-    /// メニュー UI をシーンに追加する
-    pub def addMenuUI(scene: Scene[NodeTag]): Scene[NodeTag] =
-        let layer = CanvasLayer.make(2);
-        let titleLogo = Sprite2D.make("label_flappy_bird", titleLogoPos(), scale2x());
-        let instructions = Sprite2D.make("instructions", instructionsPos(), scale2x());
-        let playButton = TextureButton.make("button_play_normal", playButtonSize())
-            |> TextureButton.setTexturePressed("button_play_pressed")
-            |> TextureButton.setCentered(true)
-            |> Node2D.setPosition(playButtonPos())
-            |> Node2D.setScale(scale2x());
-        scene
-            |> Scene.addNode(layerName(),
-                EngineNode.CanvasLayerWithState(layer, NodeTag.NoTag))
-            |> Scene.addChild(layerName(), titleLogoName(),
-                EngineNode.Sprite2DWithState(titleLogo, NodeTag.NoTag))
-            |> Scene.addChild(layerName(), instructionsName(),
-                EngineNode.Sprite2DWithState(instructions, NodeTag.NoTag))
-            |> Scene.addChild(layerName(), playButtonName(),
-                EngineNode.TextureButtonWithState(playButton, NodeTag.NoTag))
+    /// メニュー UI をシーンに追加する。構造は MenuScene.scene.json から読み込む
+    pub def addMenuUI(scene: Scene[NodeTag]): Scene[NodeTag] \ Fs.FileRead =
+        SceneLoader.loadScene(sceneJsonPath(), scene)
 }

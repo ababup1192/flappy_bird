@@ -70,5 +70,7 @@ def main(): Unit \ IO =
        
         run {
             Game.start(GameEngine.Game.getFontAtlas("default"))
-        } with LwjglLayer.withLwjgl(config) with Math.Random.runWithIO
+        } with LwjglLayer.withLwjgl(config)
+          with Math.Random.runWithIO
+          with Fs.FileRead.runWithIO
     }
