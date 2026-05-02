@@ -310,7 +310,9 @@ mod Editor {
         }
 
     /// 編集対象ノードの中からマウス位置に重なるものを 1 件返す。
-    /// 複数 hit する場合はリストの後ろ（preorder で後 = より深い／後発）を優先する
+    /// 複数 hit する場合はレンダラの draw-order と同じ計算
+    /// （Scene.effectiveZIndexAt）で最も上に描かれるノードを優先する。
+    /// z-index が同値のときは preorder で後（より深い／後発）を採用
     def findHit(mousePos: Vec2.Vec2, rootJsonIndex: Map[NodeName, String],
                 scene: Scene[NodeTag]):
             Option[(EditableEntry, Vec2.Vec2)] \ GameEngine.Game =
@@ -320,7 +322,20 @@ mod Editor {
             if (Rect2.hasPoint(mousePos, bbox)) Some((entry, globalPos))
             else None
         });
-        List.last(hits)
+        let folded = List.foldLeft((best, hit) -> match hit {
+            case (entry, _) =>
+                let curZ = Scene.effectiveZIndexAt(entry#nodePath, scene);
+                match best {
+                    case None => Some((curZ, hit))
+                    case Some((bestZ, _)) =>
+                        if (curZ >= bestZ) Some((curZ, hit))
+                        else best
+                }
+        }, None, hits);
+        match folded {
+            case None         => None
+            case Some((_, h)) => Some(h)
+        }
 
     /// ドラッグ中: マウスの移動量に応じてノードのグローバル位置を更新する。
     /// ピクセル単位に整数スナップして「カクカク」動かす（drop 時の保存値とも一致する）
