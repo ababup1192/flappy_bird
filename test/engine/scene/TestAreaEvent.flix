@@ -22,7 +22,7 @@ def noShapeAreaNode(x: Float64, y: Float64): EngineNode[Unit] =
 def detectedPairs(scene: Scene[Unit]): Set[(NodePath, NodePath)] =
     AreaEvent.toOverlapPairSet(AreaEvent.detectOverlaps(scene))
 
-// ── processAndEmitHandled テスト用の状態型 ──
+// ── AreaHandler ディスパッチテスト用の状態型 ──
 
 enum TestAreaState with Eq {
     case RedState
@@ -139,13 +139,13 @@ def testDetectOverlapsWithParentChild(): Unit \ Assert =
     Assert.assertTrue(Set.memberOf((childPath, otherPath), detectedPairs(scene)))
 
 // ========================================================================
-// processAndEmitHandled: AreaHandler ディスパッチ
+// handleOverlaps: AreaHandler ディスパッチ
 // ========================================================================
 
 /// RedState ↔ BlueState の重なりで onAreaEntered が走り Red 側の modulate が赤になる。
 /// Blue 側 / 同種同士 (Red↔Red) / 重なりなし では何も発火せず modulate は白のまま。
 @Test
-def testProcessAndEmitHandledDispatch(): Unit \ Assert =
+def testHandleOverlapsDispatch(): Unit \ Assert =
     let redBlueOverlap: Scene[TestAreaState] = Scene.empty()
         |> Scene.addNode("red", testStateAreaNode(0.0, 0.0, 10.0, 10.0, TestAreaState.RedState))
         |> Scene.addNode("blue", testStateAreaNode(5.0, 0.0, 10.0, 10.0, TestAreaState.BlueState));
@@ -162,13 +162,13 @@ def testProcessAndEmitHandledDispatch(): Unit \ Assert =
         case None => bug!("node missing")
     };
     let red = modulateOf("red" :: Nil,
-        AreaEvent.processAndEmitHandled(0.016, false, redBlueOverlap));
+        (Scene.processAll(0.016, false, redBlueOverlap) |> AreaEvent.handleOverlaps));
     let blue = modulateOf("blue" :: Nil,
-        AreaEvent.processAndEmitHandled(0.016, false, redBlueOverlap));
+        (Scene.processAll(0.016, false, redBlueOverlap) |> AreaEvent.handleOverlaps));
     let r1 = modulateOf("r1" :: Nil,
-        AreaEvent.processAndEmitHandled(0.016, false, redRedOverlap));
+        (Scene.processAll(0.016, false, redRedOverlap) |> AreaEvent.handleOverlaps));
     let separatedRed = modulateOf("red" :: Nil,
-        AreaEvent.processAndEmitHandled(0.016, false, separated));
+        (Scene.processAll(0.016, false, separated) |> AreaEvent.handleOverlaps));
     let white = (1.0f32, 1.0f32, 1.0f32);
     let red_ = (1.0f32, 0.0f32, 0.0f32);
     Assert.assertEq(
@@ -185,16 +185,16 @@ def testProcessAndEmitHandledDispatch(): Unit \ Assert =
 ///  フレーム1:  [red]<--重なり-->[blue]   → 赤くなる
 ///  フレーム2:  [red]          [blue]    → 離脱 → modulate 白に戻る
 @Test
-def testProcessAndEmitHandledFiresExitOnSeparation(): Unit \ Assert =
+def testHandleOverlapsFiresExitOnSeparation(): Unit \ Assert =
     let scene: Scene[TestAreaState] = Scene.empty()
         |> Scene.addNode("red", testStateAreaNode(0.0, 0.0, 10.0, 10.0, TestAreaState.RedState))
         |> Scene.addNode("blue", testStateAreaNode(5.0, 0.0, 10.0, 10.0, TestAreaState.BlueState));
-    let sceneAfterEnter = AreaEvent.processAndEmitHandled(0.016, false, scene);
+    let sceneAfterEnter = Scene.processAll(0.016, false, scene) |> AreaEvent.handleOverlaps;
     let separatedScene: Scene[TestAreaState] = Scene.empty()
         |> Scene.addNode("red", testStateAreaNode(0.0, 0.0, 4.0, 4.0, TestAreaState.RedState))
         |> Scene.addNode("blue", testStateAreaNode(100.0, 0.0, 4.0, 4.0, TestAreaState.BlueState))
         |> Scene.setPrevOverlaps(Scene.getPrevOverlaps(sceneAfterEnter));
-    let result = AreaEvent.processAndEmitHandled(0.016, false, separatedScene);
+    let result = Scene.processAll(0.016, false, separatedScene) |> AreaEvent.handleOverlaps;
     let modulate = match Scene.getEngineNode("red" :: Nil, result) {
         case Some(engineNode) =>
             let c = CanvasItem.getModulate(engineNode);

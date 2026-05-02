@@ -57,3 +57,41 @@ def testGameOverHidesHudScore(): Unit \ Assert =
             Assert.assertFalse(CanvasItem.isVisible(label))
         case _ => bug!("score_label not found")
     }
+
+// ========================================================================
+// アニメーション進行: updateAnimation / isAnimationFinished
+// ========================================================================
+
+/// アニメは elapsed が animDuration(0.8 秒) に達するまで未完了。
+/// 0.5 秒経過時点では未完了、0.9 秒で完了する。
+/// updateAnimation を経由しない初期状態（elapsed=0）も未完了。
+@Test
+def testGameOverAnimationFinishedGate(): Unit \ Assert =
+    let initial = GameOverScene.addGameOverUI(testFontAtlas(), testScene());
+    let half = GameOverScene.updateAnimation(0.5, initial);
+    let past = GameOverScene.updateAnimation(0.9, initial);
+    Assert.assertEq(
+        expected = (false, false, true),
+        (GameOverScene.isAnimationFinished(initial),
+         GameOverScene.isAnimationFinished(half),
+         GameOverScene.isAnimationFinished(past)))
+
+/// updateAnimation は閾値（panelShowTime=0.3 秒）を跨いだ瞬間に
+/// 隠れていた score_panel を表示する
+///   0.2 秒（< 0.3）: 非表示のまま
+///   0.4 秒（>= 0.3）: 表示される
+@Test
+def testGameOverAnimationShowsPanelAfterThreshold(): Unit \ Assert =
+    let panelPath = "gameover" :: "score_panel" :: Nil;
+    let initial = GameOverScene.addGameOverUI(testFontAtlas(), testScene());
+    let beforeThreshold = GameOverScene.updateAnimation(0.2, initial);
+    let afterThreshold = GameOverScene.updateAnimation(0.4, initial);
+    let panelVisible = scene -> match Scene.getEngineNode(panelPath, scene) {
+        case Some(EngineNode.Sprite2DWithState(sprite, _)) => CanvasItem.isVisible(sprite)
+        case _ => bug!("score_panel not found")
+    };
+    Assert.assertEq(
+        expected = (false, false, true),
+        (panelVisible(initial),
+         panelVisible(beforeThreshold),
+         panelVisible(afterThreshold)))

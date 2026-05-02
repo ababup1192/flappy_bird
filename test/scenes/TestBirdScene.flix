@@ -243,6 +243,20 @@ def testHandleGroundedFreezesBird(): Unit \ Assert =
         case _ => bug!("bird not found")
     }
 
+/// Flying 状態（Menu）の鳥は Space キー入力を無視し速度ゼロのまま動かない
+/// （Flapping 状態だけが flap 動作を実行する分岐ロジック）
+@Test
+def testFlyingStateIgnoresFlapInput(): Unit \ Assert =
+    let scene = runFlap(testMenuScene());
+    match Scene.getEngineNode("bird" :: Nil, scene) {
+        case Some(EngineNode.RigidBody2DWithState(body, _)) =>
+            Assert.assertEq(
+                expected = ((0.0, 0.0), 0.0),
+                (vecToTuple(RigidBody2D.getLinearVelocity(body)),
+                 RigidBody2D.getAngularVelocity(body)))
+        case _ => bug!("bird not found")
+    }
+
 /// Hit 状態にすると angular velocity が 2.0 になる（落下回転演出）
 @Test
 def testHandleHitSetsAngularVelocity(): Unit \ Assert =

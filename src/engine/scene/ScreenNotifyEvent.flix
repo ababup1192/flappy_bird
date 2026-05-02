@@ -21,7 +21,7 @@ pub mod ScreenNotifyEvent {
     /// 使い方:
     ///   1. 親ノードに ScreenNotifier2DWithState 子ノードを追加
     ///   2. onScreenExited / onScreenEntered で画面外・画面内に遷移したときの処理を定義
-    ///   3. ScreenNotifyEvent.handleScreenNotify がフレーム毎に自動発火
+    ///   3. ScreenNotifyEvent.handleScreenTransitions がフレーム毎に自動発火
     pub trait ScreenNotifyHandler[s] {
 
         /// ノードが画面外に出たとき呼ばれる（Godot screen_exited 相当）。
@@ -61,7 +61,7 @@ pub mod ScreenNotifyEvent {
     /// 前フレームとの差分から onScreenExited / onScreenEntered を発火する。
     ///
     /// prevOnScreen を更新して返す。
-    pub def handleScreenNotify(
+    pub def handleScreenTransitions(
             screenWidth: {screenWidth = Int32},
             screenHeight: {screenHeight = Int32},
             scene: Scene[s]): Scene[s] with ScreenNotifyHandler[s] =

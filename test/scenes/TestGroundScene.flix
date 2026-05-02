@@ -49,3 +49,23 @@ def testBirdClampedAboveGround(): Unit \ Assert =
         |> PhysicsStep.resolveStaticCollisions;
     let pos = Scene.globalPosition("bird", scene);
     Assert.assertEq(expected = 387.0, pos#y)
+
+// ========================================================================
+// 地面リサイクル（NodeRemovedHandler 経由、pipe と対称）
+// ========================================================================
+
+/// 地面タイルが画面外になると process でリサイクルされる
+/// 鳥（カメラ追従元）を遠くに飛ばすと ground_0 が viewportLeftX より左になり削除、
+/// NodeRemovedHandler で新タイルが最右端に再スポーンされてタイル数 2 を維持する
+@Test
+def testGroundRecyclesWhenOffScreen(): Unit \ Assert =
+    let result = withMockRandom(() -> withMockRecycle(() -> {
+        let initial = testScene();
+        // bird を ground_0(x=168) より遥か遠く（x=2000）に移動 → カメラ追従後に viewportLeftX=1928
+        let movedBird = Scene.setGlobalPositionAt("bird" :: Nil,
+            {x = 2000.0, y = 200.0}, initial);
+        Scene.processAll(0.016, false, movedBird)
+    }));
+    let groundCount = List.length(Scene.getNodesInGroup(GroundScene.groundGroup(), result));
+    let ground0Removed = Option.isEmpty(Scene.getEngineNode("ground_0" :: Nil, result));
+    Assert.assertEq(expected = (2, true), (groundCount, ground0Removed))

@@ -3,8 +3,8 @@
 ///
 /// 使い方:
 ///   1. ノード型に AreaHandler[s] を実装し onAreaEntered / onAreaExited を定義
-///   2. processAndEmitHandled をゲームループで呼び出す
-///   （または handleOverlaps を Scene.processAll の後で呼び出す）
+///   2. Scene.processAll の後で handleOverlaps を呼び出す
+///      （ゲームループでは GameEngine.handleCollisions が代行）
 
 /// 有向オーバーラップペア (selfPath, otherPath) の集合。
 /// 前フレームの重なり状態を保持し、離脱イベントの検出に使う。
@@ -152,11 +152,4 @@ pub mod AreaEvent {
             sceneAfterEnter,
             exitedPairs);
         Scene.setPrevOverlaps(currentPairs, sceneAfterExit)
-
-    /// Scene.processAll + 重なり検出 + AreaHandler.onAreaEntered / onAreaExited ディスパッチ。
-    /// Scene 内の prevOverlaps を読み書きし、離脱したペアに onAreaExited を発火する。
-    pub def processAndEmitHandled(delta: Float64, paused: Bool,
-                                  scene: Scene[s]): Scene[s] \ Node.Aef[s] + AreaHandler.Aef[s]
-            with Node[s], AreaHandler[s] =
-        Scene.processAll(delta, paused, scene) |> handleOverlaps
 }

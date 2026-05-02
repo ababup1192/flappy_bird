@@ -143,11 +143,11 @@ mod GameEngine {
         AreaEvent.handleOverlaps(scene) |> PhysicsStep.resolveStaticCollisions
 
     /// 画面内外の遷移を検出し ScreenNotifyHandler で通知する
-    pub def handleScreenNotify(screenWidth: {screenWidth = Int32},
+    pub def handleScreenTransitions(screenWidth: {screenWidth = Int32},
                       screenHeight: {screenHeight = Int32},
                       scene: Scene[s]): Scene[s]
             with ScreenNotifyEvent.ScreenNotifyHandler[s] =
-        ScreenNotifyEvent.handleScreenNotify(screenWidth, screenHeight, scene)
+        ScreenNotifyEvent.handleScreenTransitions(screenWidth, screenHeight, scene)
 
     /// タイマータイムアウトを検出し TimerHandler で応答する
     pub def handleTimers(scene: Scene[s]): Scene[s] \ Math.Random
