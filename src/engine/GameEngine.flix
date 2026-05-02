@@ -138,30 +138,30 @@ mod GameEngine {
 
     /// 衝突フェーズ: Area2D 重なり検出 → AreaHandler 発火 → RigidBody2D ↔ StaticBody2D 押し戻し
     /// 押し戻しは検出の後に行う（順序を逆にすると境界ピッタリで Area2D 重なりが外れる）
-    pub def emitCollision(scene: Scene[s]): Scene[s] \ AreaEvent.AreaHandler.Aef[s]
+    pub def handleCollisions(scene: Scene[s]): Scene[s] \ AreaEvent.AreaHandler.Aef[s]
             with AreaEvent.AreaHandler[s] =
         AreaEvent.handleOverlaps(scene) |> PhysicsStep.resolveStaticCollisions
 
     /// 画面内外の遷移を検出し ScreenNotifyHandler で通知する
-    pub def emitScreenNotify(screenWidth: {screenWidth = Int32},
+    pub def handleScreenNotify(screenWidth: {screenWidth = Int32},
                       screenHeight: {screenHeight = Int32},
                       scene: Scene[s]): Scene[s]
             with ScreenNotifyEvent.ScreenNotifyHandler[s] =
         ScreenNotifyEvent.handleScreenNotify(screenWidth, screenHeight, scene)
 
     /// タイマータイムアウトを検出し TimerHandler で応答する
-    pub def emitTimers(scene: Scene[s]): Scene[s] \ Math.Random
+    pub def handleTimers(scene: Scene[s]): Scene[s] \ Math.Random
             with TimerEvent.TimerHandler[s] =
         TimerEvent.handleTimeouts(scene)
 
     /// ボタンプレスを検出し ButtonHandler で応答する
-    pub def emitButtons(scene: Scene[s]): Scene[s] \ {Game, ButtonEvent.ButtonHandler.Aef[s]}
+    pub def handleButtons(scene: Scene[s]): Scene[s] \ {Game, ButtonEvent.ButtonHandler.Aef[s]}
             with ButtonEvent.ButtonHandler[s] =
         ButtonEvent.handleButtons(scene)
 
     /// キー入力の差分を検出し InputHandler で応答する
     /// 前フレームとのキー状態差分から押下/離脱イベントを合成する
-    pub def emitInput(scene: Scene[s]): Scene[s] \ {Game, InputEvent.InputHandler.Aef[s]}
+    pub def handleInput(scene: Scene[s]): Scene[s] \ {Game, InputEvent.InputHandler.Aef[s]}
             with InputEvent.InputHandler[s] =
         InputEvent.handleInput(scene)
 

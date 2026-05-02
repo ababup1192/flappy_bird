@@ -1,7 +1,7 @@
 /// 物理ステップ — Node.physicsProcess + RigidBody2D の重力・ダンピング・速度積分
 ///
 /// Godot の physics_process に相当する物理更新。
-/// 静的衝突解決（resolveStaticCollisions）は別関数 — GameEngine.emitCollision の
+/// 静的衝突解決（resolveStaticCollisions）は別関数 — GameEngine.handleCollisions の
 /// 内部で Area2D 重なり検出の後に呼ばれる。順序を逆にすると、RigidBody2D が
 /// StaticBody2D に接触した瞬間に Area2D が「ピッタリ境界」になり、
 /// 重なり判定が外れて areaEntered が発火しないため。

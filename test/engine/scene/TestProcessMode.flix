@@ -1,33 +1,23 @@
 // Tests for ProcessMode.shouldProcess
 
+/// shouldProcess の真理値表（4 ProcessMode × paused on/off）
+///
+///   |             | notPaused | paused |
+///   | Pausable    | true      | false  |
+///   | WhenPaused  | false     | true   |
+///   | Always      | true      | true   |
+///   | Disabled    | false     | false  |
 @Test
-def testShouldProcessPausableNotPaused(): Unit \ Assert =
-    Assert.assertTrue(ProcessMode.shouldProcess(false, ProcessMode.Pausable))
-
-@Test
-def testShouldProcessPausablePaused(): Unit \ Assert =
-    Assert.assertFalse(ProcessMode.shouldProcess(true, ProcessMode.Pausable))
-
-@Test
-def testShouldProcessWhenPausedNotPaused(): Unit \ Assert =
-    Assert.assertFalse(ProcessMode.shouldProcess(false, ProcessMode.WhenPaused))
-
-@Test
-def testShouldProcessWhenPausedPaused(): Unit \ Assert =
-    Assert.assertTrue(ProcessMode.shouldProcess(true, ProcessMode.WhenPaused))
-
-@Test
-def testShouldProcessAlwaysNotPaused(): Unit \ Assert =
-    Assert.assertTrue(ProcessMode.shouldProcess(false, ProcessMode.Always))
-
-@Test
-def testShouldProcessAlwaysPaused(): Unit \ Assert =
-    Assert.assertTrue(ProcessMode.shouldProcess(true, ProcessMode.Always))
-
-@Test
-def testShouldProcessDisabledNotPaused(): Unit \ Assert =
-    Assert.assertFalse(ProcessMode.shouldProcess(false, ProcessMode.Disabled))
-
-@Test
-def testShouldProcessDisabledPaused(): Unit \ Assert =
-    Assert.assertFalse(ProcessMode.shouldProcess(true, ProcessMode.Disabled))
+def testShouldProcessTruthTable(): Unit \ Assert =
+    let on = mode -> ProcessMode.shouldProcess(false, mode);
+    let off = mode -> ProcessMode.shouldProcess(true, mode);
+    Assert.assertEq(
+        expected = (
+            (true, false),
+            (false, true),
+            (true, true),
+            (false, false)),
+        ((on(ProcessMode.Pausable),   off(ProcessMode.Pausable)),
+         (on(ProcessMode.WhenPaused), off(ProcessMode.WhenPaused)),
+         (on(ProcessMode.Always),     off(ProcessMode.Always)),
+         (on(ProcessMode.Disabled),   off(ProcessMode.Disabled))))

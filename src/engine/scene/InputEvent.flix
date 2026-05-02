@@ -11,7 +11,7 @@
 ///
 /// 使い方:
 ///   1. InputHandler[s] を実装し必要なコールバックを記述
-///   2. handleInput(scene) または GameEngine.emitInput をゲームループで呼び出す
+///   2. handleInput(scene) または GameEngine.handleInput をゲームループで呼び出す
 
 pub mod InputEvent {
 

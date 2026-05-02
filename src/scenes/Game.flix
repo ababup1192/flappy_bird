@@ -344,9 +344,9 @@ mod Game {
             
                 |> GameEngine.process(dt, false)
                 |> GameEngine.physicsProcess(dt, false, PhysicsStep.defaultGravity())
-                |> GameEngine.emitInput
-                |> GameEngine.emitButtons
-                |> GameEngine.emitCollision;
+                |> GameEngine.handleInput
+                |> GameEngine.handleButtons
+                |> GameEngine.handleCollisions;
             let currentPhase = Phase.get();
             let nextScene = if (currentPhase != previousPhase)
                                 applyPhaseChange(currentPhase, fontAtlas, updatedScene)
