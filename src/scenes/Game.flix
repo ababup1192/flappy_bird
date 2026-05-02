@@ -1,22 +1,6 @@
 // Game — Flappy Bird のノードタグ定義・trait instance・シーン構築・ゲームループ
 
 // ========================================================================
-// 鳥の状態マシン
-// ========================================================================
-
-/// 鳥の状態遷移: Flying → Flapping → Hit → Grounded
-/// Flying:   メニュー画面（重力なし、ボビングアニメ）
-/// Flapping: プレイ中（重力あり、フラップ操作可）
-/// Hit:      パイプ衝突（移動停止、回転のみ）
-/// Grounded: 地面着地（完全停止）
-pub enum BirdState with Eq, ToString {
-    case Flying
-    case Flapping
-    case Hit
-    case Grounded
-}
-
-// ========================================================================
 // ゲームフェーズ
 // ========================================================================
 
@@ -106,13 +90,11 @@ pub type alias GameState = {
 
 instance Node[NodeTag] {
     type Aef = { Math.Random }
-    // Bird: 回転角クランプ / Camera2D: 追従+シェイク / LevelManager: リサイクル
+    // Camera2D: 追従+シェイク / LevelManager: リサイクル
+    // Bird は bird.gd に倣い _process を使わない（physicsProcess のみ）
     redef process(delta: Float64, node: EngineNode[NodeTag],
                   _path: NodePath, scene: Scene[NodeTag]): (EngineNode[NodeTag], Scene[NodeTag]) \ Math.Random =
         match node {
-            case EngineNode.RigidBody2DWithState(body, NodeTag.Bird(birdData)) =>
-                let (newBody, newData) = BirdScene.birdProcess(delta, body, birdData);
-                checked_ecast((EngineNode.RigidBody2DWithState(newBody, NodeTag.Bird(newData)), scene))
             case EngineNode.Camera2DWithState(cam, NodeTag.CameraShake(shakeData)) =>
                 let birdPos = Scene.globalPosition("bird", scene);
                 let baseOffset = {x = Game.cameraOffsetX(), y = 0.0};
@@ -141,15 +123,30 @@ instance Node[NodeTag] {
             case _ => checked_ecast((node, scene))
         }
 
-    // Bird: フラップリクエストの適用と落下時の角速度制御
-    redef physicsProcess(_delta: Float64, node: EngineNode[NodeTag],
-                         _path: NodePath, scene: Scene[NodeTag]): (EngineNode[NodeTag], Scene[NodeTag]) \ Math.Random =
+    // Bird: 回転 -30° クランプ + 落下時 angVel = 1.5（bird.gd FlappingState.update 準拠）
+    redef physicsProcess(delta: Float64, node: EngineNode[NodeTag],
+                         path: NodePath, scene: Scene[NodeTag]): (EngineNode[NodeTag], Scene[NodeTag]) \ Math.Random =
         match node {
-            case EngineNode.RigidBody2DWithState(body, NodeTag.Bird(birdData)) =>
-                let (newBody, newData) = BirdScene.birdPhysicsProcess(body, birdData);
-                checked_ecast((EngineNode.RigidBody2DWithState(newBody, NodeTag.Bird(newData)), scene))
-            case _ => checked_ecast((node, scene))
+            case EngineNode.RigidBody2DWithState(_, NodeTag.Bird(_)) =>
+                checked_ecast(BirdScene.physicsProcess(delta, node, path, scene))
+            case _ => (node, scene)
         }
+}
+
+// ========================================================================
+// InputHandler 実装（bird.gd _input 相当を BirdScene にディスパッチ）
+// ========================================================================
+
+instance InputEvent.InputHandler[NodeTag] {
+    type Aef = { GameEngine.Audio }
+    redef onKeyPressed(key: GameEngine.Key,
+                       scene: Scene[NodeTag]): Scene[NodeTag] \ GameEngine.Audio =
+        BirdScene.input(BirdInputEvent.KeyPressed(key), scene)
+
+    redef onMouseButtonPressed(button: GameEngine.MouseButton,
+                               _position: Vec2.Vec2,
+                               scene: Scene[NodeTag]): Scene[NodeTag] \ GameEngine.Audio =
+        BirdScene.input(BirdInputEvent.MouseButtonPressed(button), scene)
 }
 
 // ========================================================================
@@ -337,20 +334,16 @@ mod Game {
 
     /// 鳥が地面に衝突したときの処理
     /// 鳥を Grounded 状態にし、地面の上にクランプする
+    /// SE は BirdScene.setBirdState 側で再生される（bird.gd GroundedState._init 準拠）
     pub def onBirdHitGround(scene: Scene[NodeTag]): Scene[NodeTag] \ GameEngine.Audio =
         let birdData = BirdScene.getBirdData(scene);
         match birdData#state {
             case BirdState.Flapping =>
-                // パイプに当たらず直接地面: sfx_hit + sfx_die の両方
-                GameEngine.Audio.playAudio("sfx_hit");
-                GameEngine.Audio.playAudio("sfx_die");
                 scene
                     |> BirdScene.setBirdState(BirdState.Grounded)
                     |> clampBirdAboveGround
                     |> triggerCameraShake(shakeIntensity(), shakeDuration())
             case BirdState.Hit =>
-                // パイプ衝突後の着地: sfx_die のみ（sfx_hit は再生済み）
-                GameEngine.Audio.playAudio("sfx_die");
                 scene
                     |> BirdScene.setBirdState(BirdState.Grounded)
                     |> clampBirdAboveGround
@@ -359,11 +352,11 @@ mod Game {
 
     /// 鳥がパイプに衝突したときの処理
     /// Flapping → Hit に遷移し、鳥をパイプの左端まで押し戻す
+    /// SE は BirdScene.setBirdState 側で再生される（bird.gd HitState._init 準拠）
     pub def onBirdHitPipe(pipePath: {pipePath = NodePath}, scene: Scene[NodeTag]): Scene[NodeTag] \ GameEngine.Audio =
         let birdData = BirdScene.getBirdData(scene);
         match birdData#state {
             case BirdState.Flapping =>
-                GameEngine.Audio.playAudio("sfx_hit");
                 let pipeX = Scene.globalPositionAt(pipePath#pipePath, scene)#x;
                 scene
                     |> BirdScene.setBirdState(BirdState.Hit)
@@ -413,9 +406,10 @@ mod Game {
     // エンジン更新パイプライン
     // ========================================================================
 
-    /// エンジン更新パイプライン（process → physics → collision → screen → timers）
-    def engineUpdate(dt: Float64, scene: Scene[NodeTag]): Scene[NodeTag] \ {GameEngine.Audio, Math.Random} =
-        (GameEngine.process(dt, false)
+    /// エンジン更新パイプライン（input → process → physics → collision → screen → timers）
+    def engineUpdate(dt: Float64, scene: Scene[NodeTag]): Scene[NodeTag] \ {GameEngine.Audio, GameEngine.Game, Math.Random} =
+        (GameEngine.emitInput
+        >> GameEngine.process(dt, false)
         >> GameEngine.physicsProcess(dt, false, PhysicsStep.defaultGravity())
         >> GameEngine.emitCollision
         >> GameEngine.emitScreenNotify(screenWidth = screenWi(), screenHeight = screenHi())
@@ -449,20 +443,10 @@ mod Game {
     // ========================================================================
 
     /// フラップ入力（スペースキーまたはマウス左クリック）が押されているか
+    /// メニュー / GameOver のフェーズ遷移検出に使う
     def isFlapInputPressed(): Bool \ GameEngine.Game =
         GameEngine.Game.isKeyPressed(GameEngine.Key.Space) or
         GameEngine.Game.isMouseButtonPressed(GameEngine.MouseButton.Left)
-
-    /// 入力を読み取り、鳥の BirdData にフラグをセットする
-    def handleInput(scene: Scene[NodeTag]): Scene[NodeTag] \ {GameEngine.Game, GameEngine.Audio} =
-        let birdData = BirdScene.getBirdData(scene);
-        let inputPressed = isFlapInputPressed();
-        let justPressed = inputPressed and not birdData#flapPressed;
-        let afterFlap = if (justPressed) {
-            GameEngine.Audio.playAudio("sfx_wing");
-            BirdScene.requestFlap(scene)
-        } else scene;
-        BirdScene.setFlapPressed(inputPressed, afterFlap)
 
     // ========================================================================
     // メインループ
@@ -480,8 +464,8 @@ mod Game {
             let dt = clampDeltaTime(GameEngine.Game.getDeltaTime());
             let nextState: GameState = match state#phase {
                 case GamePhase.Playing =>
+                    // 入力（キーボード/マウス）は emitInput → InputHandler で処理される
                     let updatedScene = state#scene
-                        |> handleInput
                         |> engineUpdate(dt);
                     let birdData = BirdScene.getBirdData(updatedScene);
                     if (birdData#state == BirdState.Grounded) {

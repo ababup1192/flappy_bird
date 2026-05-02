@@ -1,13 +1,36 @@
 // BirdScene — Flappy Bird の鳥シーン構築・フラップ・回転制御
 //
 // 鳥は RigidBody2D（gravity_scale=1.0）で重力を受け、フラップで上昇する。
-// 回転は物理エンジンの angularVelocity で制御し、フラップ後のクランプは
-// 物理積分の後に呼び出す clampRotation で行う。
+// 回転は物理エンジンの angularVelocity で制御し、physicsProcess の Flapping 分岐で
+// -30° クランプと落下時 angVel = 1.5 を適用する（bird.gd FlappingState.update 準拠）。
 // 衝突検知用の Area2D 子ノードを持つ。
 //
 //   RigidBody2DWithState(body, Bird(BirdData))
 //     ├── AnimSprite2DWithState(sprite, NoTag)
 //     └── Area2DWithState(area, BirdArea)
+
+// ========================================================================
+// 鳥の状態マシン
+// ========================================================================
+
+/// 鳥の状態遷移: Flying → Flapping → Hit → Grounded
+/// Flying:   メニュー画面（重力なし）
+/// Flapping: プレイ中（重力あり、フラップ操作可）
+/// Hit:      パイプ衝突（移動停止、回転のみ）
+/// Grounded: 地面着地（完全停止）
+pub enum BirdState with Eq, ToString {
+    case Flying
+    case Flapping
+    case Hit
+    case Grounded
+}
+
+/// 鳥に届く入力イベント（bird.gd の `event` 引数相当）
+/// キーボード押下とマウスボタン押下を統一的に扱う
+pub enum BirdInputEvent with Eq, ToString {
+    case KeyPressed(GameEngine.Key)
+    case MouseButtonPressed(GameEngine.MouseButton)
+}
 
 mod BirdScene {
     use NodeBuilder.{position, rotation, show, hide}
@@ -19,9 +42,8 @@ mod BirdScene {
     /// 鳥の状態データ（フレーム間で変化する純粋データ）
     /// state: 鳥の状態マシン
     /// speed: 横方向の移動速度（px/秒）
-    /// flapRequested: フラップリクエスト（次の physicsProcess で適用される）
-    /// flapPressed: 前フレームでフラップ入力があったか（連続入力防止用）
-    pub type alias BirdData = {state = BirdState, speed = Float64, flapRequested = Bool, flapPressed = Bool, bobbingPhase = Float64}
+    /// flapPressed: 前フレームのマウス左クリック状態（マウス flap 連続入力防止 / フェーズ遷移検出用）
+    pub type alias BirdData = {state = BirdState, speed = Float64, flapPressed = Bool}
 
     // ========================================================================
     // 定数 — ノード名・パス
@@ -110,7 +132,7 @@ mod BirdScene {
             Vec2.zero(),
             {x = 2.0, y = 2.0});
         let area = Area2D.make(Vec2.zero(), birdCollisionShape());
-        let birdData: BirdData = {state = BirdState.Flapping, speed = birdSpeed(), flapRequested = false, flapPressed = false, bobbingPhase = 0.0};
+        let birdData: BirdData = {state = BirdState.Flapping, speed = birdSpeed(), flapPressed = false};
         scene
             |> Scene.addNode(name(),
                 EngineNode.RigidBody2DWithState(body, NodeTag.Bird(birdData)))
@@ -132,7 +154,7 @@ mod BirdScene {
             Vec2.zero(),
             {x = 2.0, y = 2.0});
         let area = Area2D.make(Vec2.zero(), birdCollisionShape());
-        let birdData: BirdData = {state = BirdState.Flying, speed = 0.0, flapRequested = false, flapPressed = false, bobbingPhase = 0.0};
+        let birdData: BirdData = {state = BirdState.Flying, speed = 0.0, flapPressed = false};
         scene
             |> Scene.addNode(name(),
                 EngineNode.RigidBody2DWithState(body, NodeTag.Bird(birdData)))
@@ -141,165 +163,142 @@ mod BirdScene {
             |> Scene.addChild(name(), areaName(),
                 EngineNode.Area2DWithState(area, NodeTag.BirdArea))
 
-    // ========================================================================
-    // Flying → Flapping 遷移
-    // ========================================================================
-
-    /// Flying 状態から Flapping に遷移する（メニュー → プレイ開始）
-    /// 重力を復活させ、横速度を設定し、位置をリセットする
-    pub def startFlapping(scene: Scene[NodeTag]): Scene[NodeTag] =
-        scene |> mapBirdBody((body, birdData) ->
-            match birdData#state {
-                case BirdState.Flying =>
-                    let newBody = body
-                        |> Node2D.setPosition(startPosition())
-                        |> Node2D.setRotation(0.0)
-                        |> RigidBody2D.setGravityScale(birdGravityScale())
-                        |> RigidBody2D.setLinearVelocity({x = birdSpeed(), y = 0.0})
-                        |> RigidBody2D.setAngularVelocity(0.0);
-                    let newData: BirdData = {state = BirdState.Flapping, speed = birdSpeed(),
-                        flapRequested = false, flapPressed = false, bobbingPhase = 0.0};
-                    (newBody, newData)
-                case _ => (body, birdData)
-            })
-
+ 
     // ========================================================================
     // フラップ
     // ========================================================================
 
-    /// フラップを実行する: Y 方向の速度を上方向にセットし、角速度を反時計回りにする
-    /// Flapping 状態のときのみ有効
-    pub def flap(scene: Scene[NodeTag]): Scene[NodeTag] =
-        scene |> mapBirdBody((body, birdData) ->
-            match birdData#state {
-                case BirdState.Flapping =>
-                    let vel = RigidBody2D.getLinearVelocity(body);
-                    (body
-                        |> RigidBody2D.setLinearVelocity({x = vel#x, y = flapVelocityY()})
-                        |> RigidBody2D.setAngularVelocity(flapAngularVelocity()),
-                     birdData)
-                case _ => (body, birdData)
-            })
-
-    // ========================================================================
-    // フラップリクエスト（gameLoop → physicsProcess 連携用）
-    // ========================================================================
-
-    /// フラップリクエストをセットする（次の physicsProcess で速度に反映される）
-    /// Flapping 状態のときのみ有効
-    pub def requestFlap(scene: Scene[NodeTag]): Scene[NodeTag] =
-        scene |> mapBirdBody((body, birdData) ->
-            match birdData#state {
-                case BirdState.Flapping => (body, {flapRequested = true | birdData})
-                case _ => (body, birdData)
-            })
-
-    /// 前フレームのフラップ入力状態を更新する
+    /// 前フレームのフラップ入力状態を更新する（マウスクリック / フェーズ遷移検出用）
     pub def setFlapPressed(pressed: Bool, scene: Scene[NodeTag]): Scene[NodeTag] =
         scene |> mapBirdBody((body, birdData) ->
             (body, {flapPressed = pressed | birdData}))
 
     // ========================================================================
-    // physicsProcess コールバック（物理積分の前に呼ばれる）
+    // physicsProcess コールバック（bird.gd _physics_process 相当）
     // ========================================================================
 
-    /// physicsProcess コールバック: フラップ速度適用と落下時の角速度制御
-    /// フラップリクエストがあれば速度を設定し、なければ落下状態に応じて角速度を制御する
-    pub def birdPhysicsProcess(body: RigidBody2D, birdData: BirdData): (RigidBody2D, BirdData) =
-        match birdData#state {
-            case BirdState.Flapping =>
-                if (birdData#flapRequested) {
-                    let vel = RigidBody2D.getLinearVelocity(body);
-                    (body
-                        |> RigidBody2D.setLinearVelocity({x = vel#x, y = flapVelocityY()})
-                        |> RigidBody2D.setAngularVelocity(flapAngularVelocity()),
-                     {flapRequested = false | birdData})
-                } else {
-                    let vel = RigidBody2D.getLinearVelocity(body);
-                    let angVel = if (vel#y > 0.0) fallAngularVelocity()
-                                 else RigidBody2D.getAngularVelocity(body);
-                    (body |> RigidBody2D.setAngularVelocity(angVel), birdData)
-                }
-            case _ => (body, {flapRequested = false | birdData})
+    /// FlyingState.update(delta) — bird.gd: 何もしない（メニュー画面で重力ゼロ静止）
+    def flyingUpdate(body: RigidBody2D): RigidBody2D = body
+
+    /// FlappingState.update(delta) — bird.gd: 回転 -30° クランプ + 落下時 angVel = 1.5
+    def flappingUpdate(body: RigidBody2D): RigidBody2D =
+        let rot = Node2D.getRotation(body);
+        let vel = RigidBody2D.getLinearVelocity(body);
+        // bird.gd FlappingState.update と同順:
+        //   1. rot < -30°  → rot=-30°, angVel=0
+        //   2. vel.y > 0   → angVel=1.5  (上書き)
+        let (rot1, angVel1) =
+            if (rot < minRotation()) (minRotation(), 0.0)
+            else (rot, RigidBody2D.getAngularVelocity(body));
+        let angVel2 = if (vel#y > 0.0) fallAngularVelocity() else angVel1;
+        body
+            |> Node2D.setRotation(rot1)
+            |> RigidBody2D.setAngularVelocity(angVel2)
+
+    /// HitState.update(delta) — bird.gd: 何もしない（パイプ衝突後は回転加速のみ、物理積分に委任）
+    def hitUpdate(body: RigidBody2D): RigidBody2D = body
+
+    /// GroundedState.update(delta) — bird.gd: 何もしない（着地後は完全停止）
+    def groundedUpdate(body: RigidBody2D): RigidBody2D = body
+
+    /// physicsProcess コールバック: bird.gd の `_physics_process(delta) → state.update(delta)` の Flix 移植
+    /// 状態ごとに上記の per-state update 関数にディスパッチ
+    /// Node[NodeTag] の Aef ({ Math.Random }) に合わせてエフェクトを宣言する
+    pub def physicsProcess(_delta: Float64, node: EngineNode[NodeTag],
+                           _path: NodePath, scene: Scene[NodeTag]
+                          ): (EngineNode[NodeTag], Scene[NodeTag]) =
+        match node {
+            case EngineNode.RigidBody2DWithState(body, NodeTag.Bird(birdData)) =>
+                let newBody = match birdData#state {
+                    case BirdState.Flying => flyingUpdate(body)
+                    case BirdState.Flapping => flappingUpdate(body)
+                    case BirdState.Hit => hitUpdate(body)
+                    case BirdState.Grounded => groundedUpdate(body)
+                };
+                (EngineNode.RigidBody2DWithState(newBody, NodeTag.Bird(birdData)), scene)
+            case _ => (node, scene)
         }
 
-    // ========================================================================
-    // process コールバック（毎フレーム先頭で呼ばれる）
-    // ========================================================================
+    /// input ディスパッチャ — bird.gd `_input(event) → state.input(event)` 相当
+    /// キーボード・マウス両方を統一的に扱い、状態ごとに per-state input 関数にディスパッチ
+    pub def input(event: BirdInputEvent, scene: Scene[NodeTag]): Scene[NodeTag] \ GameEngine.Audio =
+        let isFlapAction = match event {
+            case BirdInputEvent.KeyPressed(GameEngine.Key.Space) => true
+            case BirdInputEvent.MouseButtonPressed(GameEngine.MouseButton.Left) => true
+            case _ => false
+        };
 
-    /// process コールバック: Flying 状態ではボビング、Flapping 状態では回転クランプ
-    pub def birdProcess(delta: Float64, body: RigidBody2D, birdData: BirdData): (RigidBody2D, BirdData) =
-        match birdData#state {
-            case BirdState.Flying =>
-                let newPhase = birdData#bobbingPhase + delta;
-                let baseY = startPosition()#y;
-                let offsetY = Vec2.sin(newPhase * 3.0) * 8.0;
-                let pos = Node2D.getPosition(body);
-                (Node2D.setPosition({x = pos#x, y = baseY + offsetY}, body),
-                 {bobbingPhase = newPhase | birdData})
-            case BirdState.Flapping =>
-                let rot = Node2D.getRotation(body);
-                if (rot < minRotation())
-                    (body
-                        |> Node2D.setRotation(minRotation())
-                        |> RigidBody2D.setAngularVelocity(0.0),
-                     birdData)
-                else
-                    (body, birdData)
-            case _ => (body, birdData)
+        match getBirdData(scene)#state {
+            case BirdState.Flapping => 
+                if (isFlapAction) {
+                    // bird.gd FlappingState.flap() インライン展開:
+                    //   bird.set_linear_velocity(Vector2(bird.get_linear_velocity().x, -150))
+                    //   bird.set_angular_velocity(-3)
+                    //   bird.get_node("sfx_wing").play()
+                    GameEngine.Audio.playAudio("sfx_wing");
+                    scene |> mapBirdBody((body, birdData) ->
+                        let vel = RigidBody2D.getLinearVelocity(body);
+                        (body
+                            |> RigidBody2D.setLinearVelocity({x = vel#x, y = flapVelocityY()})
+                            |> RigidBody2D.setAngularVelocity(flapAngularVelocity()),
+                        birdData))
+                } else scene
+            case _ => scene
         }
-
-    // ========================================================================
-    // 回転制御（物理積分の後に呼ぶ）
-    // ========================================================================
-
-    /// 物理積分後に回転と角速度をクランプする（参考実装準拠）
-    /// 1. 回転が -30° 未満なら -30° に固定し角速度を 0 にする
-    /// 2. 落下中（linear_velocity.y > 0）なら角速度を 1.5 にする
-    pub def clampRotation(scene: Scene[NodeTag]): Scene[NodeTag] =
-        scene |> mapBirdBody((body, birdData) ->
-            match birdData#state {
-                case BirdState.Flapping =>
-                    let rot = Node2D.getRotation(body);
-                    let vel = RigidBody2D.getLinearVelocity(body);
-                    let (clampedRot, angVel1) =
-                        if (rot < minRotation())
-                            (minRotation(), 0.0)
-                        else
-                            (rot, RigidBody2D.getAngularVelocity(body));
-                    let angVel2 = if (vel#y > 0.0) fallAngularVelocity()
-                                  else angVel1;
-                    (body
-                        |> Node2D.setRotation(clampedRot)
-                        |> RigidBody2D.setAngularVelocity(angVel2),
-                     birdData)
-                case _ => (body, birdData)
-            })
 
     // ========================================================================
     // 状態遷移
     // ========================================================================
 
-    /// 鳥の状態を変更し、状態に応じた物理パラメータを設定する
-    /// Grounded: 停止（速度ゼロ、重力無効）
-    /// Hit: 横移動停止、回転加速（パイプ衝突後の落下演出）
-    pub def setBirdState(newState: BirdState, scene: Scene[NodeTag]): Scene[NodeTag] =
+    /// 鳥の状態を変更し、状態に応じた物理パラメータと SE を設定する
+    /// bird.gd の `set_state(new_state)` + 各 XxxState._init / exit の責務を集約
+    ///
+    /// Flying:   重力無効、x 速度=birdData#speed（メニュー画面のボビング用）
+    /// Flapping: 重力復元、x 速度=birdData#speed、初回 flap (y=flapVelocityY, angVel=flapAngularVelocity, sfx_wing)
+    /// Hit:      横移動停止、回転加速（sfx_hit + sfx_die）
+    /// Grounded: 停止（速度ゼロ、重力無効）。直前状態が Hit 以外なら sfx_hit
+    pub def setBirdState(newState: BirdState, scene: Scene[NodeTag]): Scene[NodeTag] \ GameEngine.Audio =
+        // GameEngine.Audio
+        match newState {
+            case BirdState.Flapping =>
+                GameEngine.Audio.playAudio("sfx_wing")
+            case BirdState.Hit =>
+                GameEngine.Audio.playAudio("sfx_hit");
+                GameEngine.Audio.playAudio("sfx_die")
+            case BirdState.Grounded =>
+                if (getBirdData(scene)#state != BirdState.Hit)
+                    GameEngine.Audio.playAudio("sfx_hit")
+                else ()
+            case BirdState.Flying => ()
+        };
+
         scene |> mapBirdBody((body, birdData) ->
             let updatedData = {state = newState | birdData};
             match newState {
-                case BirdState.Grounded =>
+                case BirdState.Flying =>
+                    let vel = RigidBody2D.getLinearVelocity(body);
                     (body
-                        |> RigidBody2D.setLinearVelocity(Vec2.zero())
-                        |> RigidBody2D.setAngularVelocity(0.0)
+                        |> RigidBody2D.setLinearVelocity({x = birdData#speed, y = vel#y})
                         |> RigidBody2D.setGravityScale(0.0),
+                     updatedData)
+                case BirdState.Flapping =>
+                    // FlyingState.exit (重力復元) + FlappingState._init + flap() インライン
+                    (body
+                        |> RigidBody2D.setGravityScale(birdGravityScale())
+                        |> RigidBody2D.setLinearVelocity({x = birdData#speed, y = flapVelocityY()})
+                        |> RigidBody2D.setAngularVelocity(flapAngularVelocity()),
                      updatedData)
                 case BirdState.Hit =>
                     (body
                         |> RigidBody2D.setLinearVelocity(Vec2.zero())
                         |> RigidBody2D.setAngularVelocity(2.0),
                      updatedData)
-                case _ =>
-                    (body, updatedData)
+                case BirdState.Grounded =>
+                    (body
+                        |> RigidBody2D.setLinearVelocity(Vec2.zero())
+                        |> RigidBody2D.setAngularVelocity(0.0)
+                        |> RigidBody2D.setGravityScale(0.0),
+                     updatedData)
             })
 
     // ========================================================================

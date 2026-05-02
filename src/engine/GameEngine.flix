@@ -70,12 +70,24 @@ mod GameEngine {
         case Escape
     }
 
+    /// Key の全バリアント。InputEvent などのイベント駆動入力で
+    /// 走査対象として使う。新しい Key を追加した際はここにも追加する。
+    pub def allKeys(): List[Key] =
+        Key.W :: Key.A :: Key.S :: Key.D ::
+        Key.Up :: Key.Down :: Key.Left :: Key.Right ::
+        Key.Enter :: Key.Space :: Key.Escape :: Nil
+
     /// マウスボタン
     pub enum MouseButton with Eq, Order, ToString {
         case Left
         case Right
         case Middle
     }
+
+    /// MouseButton の全バリアント。InputEvent でマウス押下/離脱の
+    /// 走査対象として使う。
+    pub def allMouseButtons(): List[MouseButton] =
+        MouseButton.Left :: MouseButton.Right :: MouseButton.Middle :: Nil
 
     /// ゲームエフェクト: 描画・ウィンドウ制御・時間取得・キー入力・マウス入力・フォント・ビューポート
     pub eff Game {
@@ -140,6 +152,12 @@ mod GameEngine {
     pub def emitButtons(scene: Scene[s]): Scene[s] \ Game
             with ButtonEvent.ButtonHandler[s] =
         ButtonEvent.handleButtons(scene)
+
+    /// キー入力の差分を検出し InputHandler で応答する
+    /// 前フレームとのキー状態差分から押下/離脱イベントを合成する
+    pub def emitInput(scene: Scene[s]): Scene[s] \ {Game, InputEvent.InputHandler.Aef[s]}
+            with InputEvent.InputHandler[s] =
+        InputEvent.handleInput(scene)
 
     /// シーンを描画する
     /// アクティブな Camera2D があれば、ビューポートオフセットを計算して描画に適用する

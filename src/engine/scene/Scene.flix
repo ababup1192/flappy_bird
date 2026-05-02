@@ -16,7 +16,10 @@ pub enum Scene[s] {
         nodes = Map[NodeName, SceneEntry[s]],
         prevOverlaps = OverlapPairSet,
         prevOnScreen = Set[NodePath],
-        readiedPaths = Set[NodePath]
+        readiedPaths = Set[NodePath],
+        prevKeyState = Set[GameEngine.Key],
+        prevMouseButtonState = Set[GameEngine.MouseButton],
+        prevMousePosition = Option[Vec2.Vec2]
     })
 }
 
@@ -50,6 +53,36 @@ pub mod Scene {
     pub def setPrevOnScreen(onScreen: Set[NodePath], scene: Scene[s]): Scene[s] =
         let Scene.Scene(r) = scene;
         Scene.Scene({ prevOnScreen = onScreen | r })
+
+    /// 前フレームに押されていたキーセットを取り出す
+    pub def getPrevKeyState(scene: Scene[s]): Set[GameEngine.Key] =
+        let Scene.Scene(r) = scene;
+        r#prevKeyState
+
+    /// 前フレームに押されていたキーセットを設定する
+    pub def setPrevKeyState(keys: Set[GameEngine.Key], scene: Scene[s]): Scene[s] =
+        let Scene.Scene(r) = scene;
+        Scene.Scene({ prevKeyState = keys | r })
+
+    /// 前フレームに押されていたマウスボタンセットを取り出す
+    pub def getPrevMouseButtonState(scene: Scene[s]): Set[GameEngine.MouseButton] =
+        let Scene.Scene(r) = scene;
+        r#prevMouseButtonState
+
+    /// 前フレームに押されていたマウスボタンセットを設定する
+    pub def setPrevMouseButtonState(buttons: Set[GameEngine.MouseButton], scene: Scene[s]): Scene[s] =
+        let Scene.Scene(r) = scene;
+        Scene.Scene({ prevMouseButtonState = buttons | r })
+
+    /// 前フレームのマウス位置を取り出す（初回フレームでは None）
+    pub def getPrevMousePosition(scene: Scene[s]): Option[Vec2.Vec2] =
+        let Scene.Scene(r) = scene;
+        r#prevMousePosition
+
+    /// 前フレームのマウス位置を設定する
+    pub def setPrevMousePosition(pos: Option[Vec2.Vec2], scene: Scene[s]): Scene[s] =
+        let Scene.Scene(r) = scene;
+        Scene.Scene({ prevMousePosition = pos | r })
 
     /// SceneEntry のエンジンノードを取り出す
     def entryEngineNode(entry: SceneEntry[s]): EngineNode[s] =
@@ -135,7 +168,7 @@ pub mod Scene {
 
     /// 空のシーンを返す
     pub def empty(): Scene[s] =
-        Scene.Scene({ nodes = Map.empty(), prevOverlaps = Set.empty(), prevOnScreen = Set.empty(), readiedPaths = Set.empty() })
+        Scene.Scene({ nodes = Map.empty(), prevOverlaps = Set.empty(), prevOnScreen = Set.empty(), readiedPaths = Set.empty(), prevKeyState = Set.empty(), prevMouseButtonState = Set.empty(), prevMousePosition = None })
 
     /// ルートノードとして追加する（state は EngineNode[s] 内に含まれる）
     pub def addNode(name: NodeName, engineNode: EngineNode[s], scene: Scene[s]): Scene[s] =

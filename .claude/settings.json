@@ -15,6 +15,7 @@
       "Bash(gh api --method DELETE *)"
     ],
     "allow": [
+      "Bash(rtk *)",
       "Bash(ls *)",
       "Bash(cat *)",
       "Bash(head *)",

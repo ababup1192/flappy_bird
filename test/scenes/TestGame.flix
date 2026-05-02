@@ -62,6 +62,21 @@ def testLevelData(): LevelManagerData =
 /// Vec2 をタプルに変換するヘルパー
 def vecToTuple(v: Vec2.Vec2): (Float64, Float64) = (v#x, v#y)
 
+/// 鳥のノードに BirdScene.physicsProcess を適用するテストヘルパー
+/// （旧 BirdScene.clampRotation の代替: physicsProcess は Flapping 状態のみ動作）
+def runBirdPhysicsProcess(scene: Scene[NodeTag]): Scene[NodeTag] =
+    match Scene.getEngineNode("bird" :: Nil, scene) {
+        case Some(node) =>
+            let (newNode, newScene) = BirdScene.physicsProcess(0.0, node, "bird" :: Nil, scene);
+            Scene.setEngineNode("bird" :: Nil, newNode, newScene)
+        case None => bug!("bird not found")
+    }
+
+/// 鳥に Space キー入力経由で flap を発火させるテストヘルパー
+/// （flap は flappingInput にインライン化済みのため、入力 API 経由でテスト）
+def runFlap(scene: Scene[NodeTag]): Scene[NodeTag] =
+    withMockAudio(() -> BirdScene.input(BirdInputEvent.KeyPressed(GameEngine.Key.Space), scene))
+
 // ========================================================================
 // buildState: ノード数・構造
 // ========================================================================
@@ -196,7 +211,7 @@ def testBirdFallsSignificantly(): Unit \ Assert =
 /// flap で Y 方向の速度が -300 に設定される
 @Test
 def testFlapSetsVelocity(): Unit \ Assert =
-    let scene = BirdScene.flap(testScene());
+    let scene = runFlap(testScene());
     match Scene.getEngineNode("bird" :: Nil, scene) {
         case Some(EngineNode.RigidBody2DWithState(body, _)) =>
             Assert.assertEq(expected = -300.0, RigidBody2D.getLinearVelocity(body)#y)
@@ -206,7 +221,7 @@ def testFlapSetsVelocity(): Unit \ Assert =
 /// flap で角速度が -3.0 に設定される
 @Test
 def testFlapSetsAngularVelocity(): Unit \ Assert =
-    let scene = BirdScene.flap(testScene());
+    let scene = runFlap(testScene());
     match Scene.getEngineNode("bird" :: Nil, scene) {
         case Some(EngineNode.RigidBody2DWithState(body, _)) =>
             Assert.assertEq(expected = -3.0, RigidBody2D.getAngularVelocity(body))
@@ -217,7 +232,7 @@ def testFlapSetsAngularVelocity(): Unit \ Assert =
 @Test
 def testFlapThenGravity(): Unit \ Assert =
     let scene = testScene()
-        |> BirdScene.flap
+        |> runFlap
         |> PhysicsStep.integrate(0.02, PhysicsStep.defaultGravity());
     let pos = Scene.globalPosition("bird", scene);
     Assert.assertTrue(pos#y < 256.0)
@@ -232,7 +247,7 @@ def testClampRotationMin(): Unit \ Assert =
     let scene = testScene()
         |> BirdScene.mapBirdBody((body, birdData) ->
             (Node2D.setRotation(-1.0, body), birdData))
-        |> BirdScene.clampRotation;
+        |> runBirdPhysicsProcess;
     match Scene.getEngineNode("bird" :: Nil, scene) {
         case Some(EngineNode.RigidBody2DWithState(body, _)) =>
             let rot = Node2D.getRotation(body);
@@ -247,7 +262,7 @@ def testClampRotationMinResetsAngularVelocity(): Unit \ Assert =
     let scene = testScene()
         |> BirdScene.mapBirdBody((body, birdData) ->
             (body |> Node2D.setRotation(-1.0) |> RigidBody2D.setAngularVelocity(-3.0), birdData))
-        |> BirdScene.clampRotation;
+        |> runBirdPhysicsProcess;
     match Scene.getEngineNode("bird" :: Nil, scene) {
         case Some(EngineNode.RigidBody2DWithState(body, _)) =>
             Assert.assertEq(expected = 0.0, RigidBody2D.getAngularVelocity(body))
@@ -263,7 +278,7 @@ def testClampRotationFallAngularVelocity(): Unit \ Assert =
                   |> RigidBody2D.setAngularVelocity(0.5)
                   |> RigidBody2D.setLinearVelocity({x = 100.0, y = 50.0}),
              birdData))
-        |> BirdScene.clampRotation;
+        |> runBirdPhysicsProcess;
     match Scene.getEngineNode("bird" :: Nil, scene) {
         case Some(EngineNode.RigidBody2DWithState(body, _)) =>
             Assert.assertEq(expected = 1.5, RigidBody2D.getAngularVelocity(body))
@@ -279,7 +294,7 @@ def testClampRotationKeepsAngularVelocityWhenRising(): Unit \ Assert =
                   |> RigidBody2D.setAngularVelocity(-3.0)
                   |> RigidBody2D.setLinearVelocity({x = 100.0, y = -150.0}),
              birdData))
-        |> BirdScene.clampRotation;
+        |> runBirdPhysicsProcess;
     match Scene.getEngineNode("bird" :: Nil, scene) {
         case Some(EngineNode.RigidBody2DWithState(body, _)) =>
             Assert.assertEq(expected = -3.0, RigidBody2D.getAngularVelocity(body))
@@ -294,9 +309,9 @@ def testClampRotationKeepsAngularVelocityWhenRising(): Unit \ Assert =
 @Test
 def testFlapIntegrateClamp(): Unit \ Assert =
     let scene = testScene()
-        |> BirdScene.flap
+        |> runFlap
         |> PhysicsStep.integrate(0.02, PhysicsStep.defaultGravity())
-        |> BirdScene.clampRotation;
+        |> runBirdPhysicsProcess;
     match Scene.getEngineNode("bird" :: Nil, scene) {
         case Some(EngineNode.RigidBody2DWithState(body, _)) =>
             let rot = Node2D.getRotation(body);
@@ -311,9 +326,9 @@ def testFlapIntegrateClamp(): Unit \ Assert =
 @Test
 def testFlapAngularVelocityAfterClamp(): Unit \ Assert =
     let scene = testScene()
-        |> BirdScene.flap
+        |> runFlap
         |> PhysicsStep.integrate(0.02, PhysicsStep.defaultGravity())
-        |> BirdScene.clampRotation;
+        |> runBirdPhysicsProcess;
     match Scene.getEngineNode("bird" :: Nil, scene) {
         case Some(EngineNode.RigidBody2DWithState(body, _)) =>
             // フラップ角速度 -3.0 が保持される（負の角速度は clamp されない）
@@ -429,9 +444,10 @@ def testRecycleGroundsNewTilePosition(): Unit \ Assert =
 /// Grounded 状態にすると速度がゼロになること
 @Test
 def testSetBirdStateGroundedStopsVelocity(): Unit \ Assert =
-    let scene = testScene()
-        |> BirdScene.flap
-        |> BirdScene.setBirdState(BirdState.Grounded);
+    let scene = withMockAudio(() ->
+        testScene()
+            |> runFlap
+            |> BirdScene.setBirdState(BirdState.Grounded));
     match Scene.getEngineNode("bird" :: Nil, scene) {
         case Some(EngineNode.RigidBody2DWithState(body, _)) =>
             Assert.assertEq(expected = (0.0, 0.0),
@@ -442,8 +458,9 @@ def testSetBirdStateGroundedStopsVelocity(): Unit \ Assert =
 /// Grounded 状態にすると重力が無効になること
 @Test
 def testSetBirdStateGroundedDisablesGravity(): Unit \ Assert =
-    let scene = testScene()
-        |> BirdScene.setBirdState(BirdState.Grounded);
+    let scene = withMockAudio(() ->
+        testScene()
+            |> BirdScene.setBirdState(BirdState.Grounded));
     match Scene.getEngineNode("bird" :: Nil, scene) {
         case Some(EngineNode.RigidBody2DWithState(body, _)) =>
             Assert.assertEq(expected = 0.0, RigidBody2D.getGravityScale(body))
@@ -453,15 +470,17 @@ def testSetBirdStateGroundedDisablesGravity(): Unit \ Assert =
 /// Grounded 状態にすると BirdData の state が Grounded になること
 @Test
 def testSetBirdStateGroundedUpdatesData(): Unit \ Assert =
-    let scene = testScene()
-        |> BirdScene.setBirdState(BirdState.Grounded);
+    let scene = withMockAudio(() ->
+        testScene()
+            |> BirdScene.setBirdState(BirdState.Grounded));
     Assert.assertEq(expected = BirdState.Grounded, BirdScene.getBirdData(scene)#state)
 
 /// Hit 状態にすると angular velocity が 2.0 になること（落下回転演出）
 @Test
 def testSetBirdStateHitSetsAngularVelocity(): Unit \ Assert =
-    let scene = testScene()
-        |> BirdScene.setBirdState(BirdState.Hit);
+    let scene = withMockAudio(() ->
+        testScene()
+            |> BirdScene.setBirdState(BirdState.Hit));
     match Scene.getEngineNode("bird" :: Nil, scene) {
         case Some(EngineNode.RigidBody2DWithState(body, _)) =>
             Assert.assertEq(expected = 2.0, RigidBody2D.getAngularVelocity(body))
@@ -968,11 +987,12 @@ def testMenuHasGrounds(): Unit \ Assert =
 def testMenuNodeCount(): Unit \ Assert =
     Assert.assertEq(expected = 16, Scene.nodeCount(testMenuScene()))
 
-/// ボビングで鳥の Y 座標が変化すること
+/// メニュー画面では鳥は静止する（bird.gd 忠実化により bobbing は削除済み。
+/// Godot ではアニメーションで実現される視覚効果だが Flix エンジンに該当機能なし）
 @Test
-def testMenuBirdBobbing(): Unit \ Assert =
+def testMenuBirdStatic(): Unit \ Assert =
     let scene = testMenuScene();
     let posBefore = Scene.globalPosition("bird", scene);
     let sceneAfter = withMockRandom(() -> scene |> Scene.processAll(0.5, false));
     let posAfter = Scene.globalPosition("bird", sceneAfter);
-    Assert.assertTrue(Float64.abs(posAfter#y - posBefore#y) > 0.1)
+    Assert.assertTrue(Float64.abs(posAfter#y - posBefore#y) < 0.001)
