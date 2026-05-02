@@ -176,4 +176,23 @@ mod PipeScene {
         let nextX = maxPipeX(scene) + pipeSpacingX();
         let id = Float64.tryToInt32(nextX) |> Option.getWithDefault(0);
         spawnPipePair(id, nextX, score, scene)
+
+    // ========================================================================
+    // ロジック（process）
+    // ========================================================================
+
+    /// パイプペア親が画面左端を完全に通過したらサブツリーごと除去する
+    /// 親 Marker2D を removeAt するため top/bottom/coin が一度に消える
+    /// 除去通知は NodeRemovedHandler が受け取り、新ペアを最右端に再スポーンする
+    pub def process(node: EngineNode[NodeTag], path: NodePath,
+                    scene: Scene[NodeTag]): (EngineNode[NodeTag], Scene[NodeTag]) \ Math.Random =
+        match node {
+            case EngineNode.Marker2DWithState(_, NodeTag.Pipe) =>
+                let pos = Scene.globalPositionAt(path, scene);
+                if (pos#x + pipeHalfWidth() < Game.getViewportLeftX(scene))
+                    (node, Scene.removeAtAndNotify(path, scene))
+                else
+                    (node, scene)
+            case _ => (node, scene)
+        }
 }

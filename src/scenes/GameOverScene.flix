@@ -190,6 +190,21 @@ mod GameOverScene {
             case _ => true
         }
 
+    /// CanvasLayer の毎フレーム更新（GameOverAnim 状態を進めて再ラップする）
+    /// 該当しないノードはそのまま返す
+    pub def process(delta: Float64, node: EngineNode[NodeTag],
+                    scene: Scene[NodeTag]): (EngineNode[NodeTag], Scene[NodeTag]) =
+        match node {
+            case EngineNode.CanvasLayerWithState(layer, NodeTag.GameOverAnim(_)) =>
+                let newScene = updateAnimation(delta, scene);
+                let newState = match Scene.getState(layerPath(), newScene) {
+                    case Some(tag) => tag
+                    case _         => NodeTag.GameOverAnim({elapsed = 0.0})
+                };
+                (EngineNode.CanvasLayerWithState(layer, newState), newScene)
+            case _ => (node, scene)
+        }
+
     /// アニメーションの経過時間を進め、閾値超過時にノードを表示する
     pub def updateAnimation(dt: Float64, scene: Scene[NodeTag]): Scene[NodeTag] =
         match Scene.getState(layerPath(), scene) {

@@ -66,4 +66,23 @@ mod GroundScene {
         scene
             |> spawnGround("ground_0", halfWidth)
             |> spawnGround("ground_1", halfWidth + groundWidth())
+
+    // ========================================================================
+    // ロジック（process）
+    // ========================================================================
+
+    /// 地面タイルが画面左端を完全に通過したらノードを除去する
+    /// 除去通知は NodeRemovedHandler が受け取り、最右端に新タイルを再スポーンする
+    pub def process(node: EngineNode[NodeTag], path: NodePath,
+                    scene: Scene[NodeTag]): (EngineNode[NodeTag], Scene[NodeTag]) \ Math.Random =
+        match node {
+            case EngineNode.StaticBody2DWithState(_, NodeTag.Ground) =>
+                let pos = Scene.globalPositionAt(path, scene);
+                let halfWidth = groundWidth() / 2.0;
+                if (pos#x + halfWidth < Game.getViewportLeftX(scene))
+                    (node, Scene.removeAtAndNotify(path, scene))
+                else
+                    (node, scene)
+            case _ => (node, scene)
+        }
 }

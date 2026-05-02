@@ -88,35 +88,20 @@ instance Node[NodeTag] {
             case _ => (node, scene)
         }
 
-    // Camera2D: CameraScene に委譲 / Ground & Coin: 画面外で自殺 / GameOverAnim: 自走
+    // 各シーンへ委譲するだけのディスパッチ
     // Bird は bird.gd に倣い _process を使わない（physicsProcess のみ）
     redef process(delta: Float64, node: EngineNode[NodeTag],
                   path: NodePath, scene: Scene[NodeTag]): (EngineNode[NodeTag], Scene[NodeTag]) \ Math.Random =
         match node {
             case EngineNode.Camera2DWithState(_, NodeTag.CameraShake(_)) =>
                 CameraScene.process(delta, node, scene)
-            case EngineNode.CanvasLayerWithState(layer, NodeTag.GameOverAnim(_)) =>
-                let newScene = GameOverScene.updateAnimation(delta, scene);
-                let newState = match Scene.getState(GameOverScene.layerPath(), newScene) {
-                    case Some(tag) => tag
-                    case _         => NodeTag.GameOverAnim({elapsed = 0.0})
-                };
-                checked_ecast((EngineNode.CanvasLayerWithState(layer, newState), newScene))
+            case EngineNode.CanvasLayerWithState(_, NodeTag.GameOverAnim(_)) =>
+                GameOverScene.process(delta, node, scene)
             case EngineNode.StaticBody2DWithState(_, NodeTag.Ground) =>
-                let pos = Scene.globalPositionAt(path, scene);
-                let halfWidth = GroundScene.groundWidth() / 2.0;
-                if (pos#x + halfWidth < Game.getViewportLeftX(scene))
-                    checked_ecast((node, Scene.removeAtAndNotify(path, scene)))
-                else
-                    (node, scene)
+                GroundScene.process(node, path, scene)
             case EngineNode.Marker2DWithState(_, NodeTag.Pipe) =>
-                // 親ノード自身を removeAt するとサブツリー全削除（top/bottom/coin も同時に消える）
-                let pos = Scene.globalPositionAt(path, scene);
-                if (pos#x + PipeScene.pipeHalfWidth() < Game.getViewportLeftX(scene))
-                    checked_ecast((node, Scene.removeAtAndNotify(path, scene)))
-                else
-                    (node, scene)
-            case _ => checked_ecast((node, scene))
+                PipeScene.process(node, path, scene)
+            case _ => (node, scene)
         }
 
     // Bird: 回転 -30° クランプ + 落下時 angVel = 1.5（bird.gd FlappingState.update 準拠）
