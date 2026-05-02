@@ -67,10 +67,6 @@ def testScene(): Scene[NodeTag] =
 def testState(): GameState =
     withMockRandom(() -> Game.buildState(testFontAtlas(), 0))
 
-/// テスト用ヘルパー: LevelManagerData を取得
-def testLevelData(): LevelManagerData =
-    Game.getLevelManagerData(testScene())
-
 /// Vec2 をタプルに変換するヘルパー
 def vecToTuple(v: Vec2.Vec2): (Float64, Float64) = (v#x, v#y)
 
@@ -94,27 +90,28 @@ def runFlap(scene: Scene[NodeTag]): Scene[NodeTag] =
 // ========================================================================
 
 /// シーンには bird(+sprite+area) + camera + background(+bg_sprite)
-///   + hud(+score_label+best_score_label) + level_manager
+///   + hud(+score_label+best_score_label)
 ///   + ground_0(+sprite) + ground_1(+sprite)
-///   + 3ペア × (2パイプ(+sprite) + coin) = 29 ノード
+///   + 3ペア × (2パイプ(+sprite) + coin) = 28 ノード
 @Test
 def testBuildSceneNodeCount(): Unit \ Assert =
-    Assert.assertEq(expected = 29, Scene.nodeCount(testScene()))
+    Assert.assertEq(expected = 28, Scene.nodeCount(testScene()))
 
-/// ルートノードは 16（bird, camera, background, hud, level_manager, ground_0, ground_1, pipe_0〜2 × top/bottom/coin）
+/// ルートノードは 15（bird, camera, background, hud, ground_0, ground_1, pipe_0〜2 × top/bottom/coin）
 @Test
 def testBuildSceneRootCount(): Unit \ Assert =
-    Assert.assertEq(expected = 16, Map.size(Scene.states(testScene())))
+    Assert.assertEq(expected = 15, Map.size(Scene.states(testScene())))
 
 /// 初期フェーズは Playing
 @Test
 def testBuildStatePhase(): Unit \ Assert =
     Assert.assertEq(expected = GamePhase.Playing, testState()#phase)
 
-/// 初期 groundCounter は 2（ground_0, ground_1 が配置済み）
+/// 初期 ground タイル数は 2（ground_0, ground_1）
 @Test
-def testBuildStateGroundCounter(): Unit \ Assert =
-    Assert.assertEq(expected = 2, testLevelData()#groundCounter)
+def testBuildStateGroundCount(): Unit \ Assert =
+    Assert.assertEq(expected = 2,
+        List.length(Scene.getNodesInGroup(GroundScene.groundGroup(), testScene())))
 
 // ========================================================================
 // BirdScene: 鳥の初期配置
@@ -412,44 +409,6 @@ def testGroundHasSpriteChild(): Unit \ Assert =
     }
 
 // ========================================================================
-// Phase 2: 地面リサイクル
-// ========================================================================
-
-/// ビューポート左端より右にあるタイルはリサイクルされない
-@Test
-def testRecycleGroundsNoOp(): Unit \ Assert =
-    let scene = testScene();
-    let (recycledScene, counter, _nextX) =
-        GroundScene.recycleGrounds(0.0, 2, 840.0, scene);
-    // 何も変わらないこと
-    Assert.assertEq(expected = (2, 2),
-        (counter, List.length(Scene.getNodesInGroup(GroundScene.groundGroup(), recycledScene))))
-
-/// ビューポート左端を超えたタイルがリサイクルされる
-///
-///   viewportLeft = 400 のとき、ground_0(center=168, right=336) は画面外
-///   → ground_0 が削除され、ground_2 が nextGroundX=840 に生成される
-///
-@Test
-def testRecycleGroundsRemovesOffScreen(): Unit \ Assert =
-    let scene = testScene();
-    let (recycledScene, counter, nextX) =
-        GroundScene.recycleGrounds(400.0, 2, 840.0, scene);
-    let paths = Scene.getNodesInGroup(GroundScene.groundGroup(), recycledScene);
-    // タイル数は変わらず 2 枚
-    Assert.assertEq(expected = (2, 3, 1176.0),
-        (List.length(paths), counter, nextX))
-
-/// リサイクル後の新タイルが正しい位置にあること
-@Test
-def testRecycleGroundsNewTilePosition(): Unit \ Assert =
-    let scene = testScene();
-    let (recycledScene, _counter, _nextX) =
-        GroundScene.recycleGrounds(400.0, 2, 840.0, scene);
-    let pos = Scene.globalPosition("ground_2", recycledScene);
-    Assert.assertEq(expected = (840.0, 456.0), vecToTuple(pos))
-
-// ========================================================================
 // Phase 2: 鳥の状態遷移 — handleHit / handleGrounded
 // ========================================================================
 
@@ -695,18 +654,14 @@ def testPipe2Position(): Unit \ Assert =
     Assert.assertEq(expected = (940.0, 450.0), vecToTuple(pos))
 
 // ========================================================================
-// Phase 4: GameState パイプフィールド
+// Phase 4: パイプ初期配置
 // ========================================================================
 
-/// pipeCounter は 3（3 ペア配置済み）
+/// 初期パイプノード数は 9（3 ペア × top/bottom/coin = 9 ノード）
 @Test
-def testBuildStatePipeCounter(): Unit \ Assert =
-    Assert.assertEq(expected = 3, testLevelData()#pipeCounter)
-
-/// nextPipeX は 1122.0（576 + 182×3）
-@Test
-def testBuildStateNextPipeX(): Unit \ Assert =
-    Assert.assertEq(expected = 1122.0, testLevelData()#nextPipeX)
+def testBuildStatePipeCount(): Unit \ Assert =
+    Assert.assertEq(expected = 9,
+        List.length(Scene.getNodesInGroup(PipeScene.pipeGroup(), testScene())))
 
 // ========================================================================
 // Phase 4: spawnPipePairAt
@@ -769,41 +724,45 @@ def testBirdPipeCollisionGroundedNoChange(): Unit \ Assert =
     Assert.assertEq(expected = BirdState.Grounded, BirdScene.getBirdData(scene)#state)
 
 // ========================================================================
-// Phase 4: パイプリサイクル
+// Phase 4: パイプリサイクル（NodeRemovedHandler 経由）
 // ========================================================================
 
-/// ビューポート右にあるパイプはリサイクルされないこと
+/// パイプペアが画面外になると process でリサイクルされる
+/// 自殺判定の主体は NodeTag.Pipe（Top/Bottom）
 @Test
-def testRecyclePipesNoOp(): Unit \ Assert =
-    let (recycledScene, counter, _nextX) = withMockRandom(() ->
-        PipeScene.recyclePipes(0.0, 3, 978.0, 10, testScene()));
-    Assert.assertEq(expected = (3, 9),
-        (counter, List.length(Scene.getNodesInGroup(PipeScene.pipeGroup(), recycledScene))))
+def testPipeRecyclesWhenOffScreen(): Unit \ Assert =
+    let result = withMockRandom(() -> {
+        let initial = testScene();
+        // bird を pipe_0(x=576) より遠く（x=2000）に移動 → camera 追従後 viewportLeftX=1928
+        // pipe_0 の右端は 576+26=602 で画面外
+        let movedBird = Scene.setGlobalPositionAt("bird" :: Nil,
+            {x = 2000.0, y = 200.0}, initial);
+        Scene.processAll(0.016, false, movedBird)
+    });
+    let pipePaths = Scene.getNodesInGroup(PipeScene.pipeGroup(), result);
+    let pipe0Removed = Option.isEmpty(Scene.getEngineNode("pipe_0_top" :: Nil, result));
+    // pipe_0 は削除され、新 pair が spawn されているのでパイプノード数は 9 維持
+    Assert.assertEq(expected = (9, true), (List.length(pipePaths), pipe0Removed))
 
-/// ビューポート左端を超えたパイプペアがリサイクルされること（score=10 の通常間隔 182）
-///
-///   viewportLeft=700 のとき、pipe_0(X=576) は右端(576+26=602) < 700 で画面外
-///   → pipe_0_top, pipe_0_bottom, pipe_0_coin が削除され、pipe_3 ペアが nextPipeX=978 に生成
-///   → パイプ数は変わらず 9、counter=4、nextX=978+182=1160
-///
+/// コインを通過した（NodeTag.NoTag になった）後でも、pipe ペアが
+/// 画面外になればリサイクルされる
+/// 再発防止: 自殺判定を Coin に置くと NoTag 化により発動しなくなるため、Pipe を主体とする
 @Test
-def testRecyclePipesRemovesOffScreen(): Unit \ Assert =
-    let (recycledScene, counter, nextX) = withMockRandom(() ->
-        PipeScene.recyclePipes(700.0, 3, 978.0, 10, testScene()));
-    let paths = Scene.getNodesInGroup(PipeScene.pipeGroup(), recycledScene);
-    Assert.assertEq(expected = (9, 4, 1160.0),
-        (List.length(paths), counter, nextX))
-
-/// リサイクル後の新パイプが正しい位置にあること
-///
-///   pipe_3_bottom は (978, 402) に配置される（mock random=0.5 → gapY=200）
-///
-@Test
-def testRecyclePipesNewPipePosition(): Unit \ Assert =
-    let (recycledScene, _counter, _nextX) = withMockRandom(() ->
-        PipeScene.recyclePipes(700.0, 3, 978.0, 10, testScene()));
-    let pos = Scene.globalPosition("pipe_3_bottom", recycledScene);
-    Assert.assertEq(expected = (978.0, 402.0), vecToTuple(pos))
+def testPipeRecyclesAfterCoinPassed(): Unit \ Assert =
+    let result = withMockRandom(() -> {
+        let initial = testScene();
+        // pipe_0 のコインを通過済み（NoTag）にする
+        let coinPath = "pipe_0_coin" :: Nil;
+        let afterPass = Scene.setState(coinPath, NodeTag.NoTag, initial);
+        // bird を pipe_0 より遠くに移動 → pipe_0 が画面外
+        let movedBird = Scene.setGlobalPositionAt("bird" :: Nil,
+            {x = 2000.0, y = 200.0}, afterPass);
+        Scene.processAll(0.016, false, movedBird)
+    });
+    let pipePaths = Scene.getNodesInGroup(PipeScene.pipeGroup(), result);
+    let pipe0Removed = Option.isEmpty(Scene.getEngineNode("pipe_0_top" :: Nil, result));
+    // コイン NoTag 化に影響されず pipe_0 は削除され、新 pair が spawn されている
+    Assert.assertEq(expected = (9, true), (List.length(pipePaths), pipe0Removed))
 
 // ========================================================================
 // Phase 6: GameOverScene — メダル判定
@@ -891,10 +850,10 @@ def testGameOverHidesHudScore(): Unit \ Assert =
         case _ => bug!("score_label not found")
     }
 
-/// buildState のノード数は GameOver UI 追加前と同じ（29）
+/// buildState のノード数は GameOver UI 追加前と同じ（28）
 @Test
 def testBuildStateNodeCountUnchanged(): Unit \ Assert =
-    Assert.assertEq(expected = 29, Scene.nodeCount(testScene()))
+    Assert.assertEq(expected = 28, Scene.nodeCount(testScene()))
 
 // ========================================================================
 // Phase 7: MenuScene — メニュー画面

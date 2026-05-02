@@ -295,6 +295,17 @@ pub mod Scene {
                     cleaned)
         }
 
+    /// パスで削除し、NodeRemovedHandler.onNodeRemoved を発火する
+    /// godot の `tree_exited` シグナル相当
+    pub def removeAtAndNotify(path: NodePath, scene: Scene[s]):
+            Scene[s] \ NodeRemovedHandler.Aef[s] with NodeRemovedHandler[s] =
+        match getState(path, scene) {
+            case Some(state) =>
+                let removed = removeAt(path, scene);
+                NodeRemovedHandler.onNodeRemoved(path, state, removed)
+            case None => checked_ecast(scene)
+        }
+
     // ========================================================================
     // ルートノード一覧
     // ========================================================================
@@ -415,6 +426,8 @@ pub mod Scene {
     // ========================================================================
 
     /// 全ノードを preorder で走査し、変換関数を順次適用する（Region で状態をスレッドする）
+    /// f が返した Scene から path が消えていた場合、変換後の EngineNode は書き戻さず
+    /// 削除を尊重する（自殺ノード対応）
     def foldNodes(f: (EngineNode[s], NodePath, Scene[s]) -> (EngineNode[s], Scene[s]) \ ef,
                   scene: Scene[s]): Scene[s] \ ef =
         let paths = preorderPaths(scene);
@@ -425,7 +438,10 @@ pub mod Scene {
                     case None => ()
                     case Some(engineNode) =>
                         let (newEn, s1) = f(engineNode, path, Ref.get(sceneRef));
-                        Ref.put(setEngineNode(path, newEn, s1), sceneRef)
+                        match getEngineNode(path, s1) {
+                            case None    => Ref.put(s1, sceneRef)
+                            case Some(_) => Ref.put(setEngineNode(path, newEn, s1), sceneRef)
+                        }
                 }
             }, paths);
             Ref.get(sceneRef)

@@ -21,22 +21,6 @@ pub eff StageRequested {
 }
 
 // ========================================================================
-// レベル管理データ
-// ========================================================================
-
-/// リサイクル用カウンタ（LevelManager ノードが保持する）
-/// groundCounter: 次の地面タイル番号（ユニーク名生成用）
-/// nextGroundX: 次の地面タイル中心の X 座標
-/// pipeCounter: 次のパイプペア番号（ユニーク名生成用）
-/// nextPipeX: 次のパイプペア中心の X 座標
-pub type alias LevelManagerData = {
-    groundCounter = Int32,
-    nextGroundX = Float64,
-    pipeCounter = Int32,
-    nextPipeX = Float64
-}
-
-// ========================================================================
 // ノードタグ
 // ========================================================================
 
@@ -68,8 +52,6 @@ pub enum NodeTag {
     case ScoreLabel(Score)
     /// ベストスコアラベルに付与。セッション中のベストスコアを保持する
     case BestScoreLabel(BestScore)
-    /// レベル管理ノード（リサイクルカウンタを保持）
-    case LevelManager(LevelManagerData)
     /// カメラシェイク状態を保持する
     case CameraShake(ShakeData)
     /// ゲームオーバーアニメーション状態を保持する
@@ -107,10 +89,10 @@ instance Node[NodeTag] {
             case _ => (node, scene)
         }
 
-    // Camera2D: 追従+シェイク / LevelManager: リサイクル
+    // Camera2D: 追従+シェイク / Ground & Coin: 画面外で自殺 / GameOverAnim: 自走
     // Bird は bird.gd に倣い _process を使わない（physicsProcess のみ）
     redef process(delta: Float64, node: EngineNode[NodeTag],
-                  _path: NodePath, scene: Scene[NodeTag]): (EngineNode[NodeTag], Scene[NodeTag]) \ Math.Random =
+                  path: NodePath, scene: Scene[NodeTag]): (EngineNode[NodeTag], Scene[NodeTag]) \ Math.Random =
         match node {
             case EngineNode.Camera2DWithState(cam, NodeTag.CameraShake(shakeData)) =>
                 let birdPos = Scene.globalPosition("bird", scene);
@@ -134,9 +116,6 @@ instance Node[NodeTag] {
                 let birdPos = Scene.globalPosition("bird", scene);
                 checked_ecast((EngineNode.Camera2DWithState(
                     Node2D.setPosition({x = birdPos#x, y = 0.0}, cam), state), scene))
-            case EngineNode.Sprite2DWithState(sprite, NodeTag.LevelManager(levelData)) =>
-                let (newData, newScene) = Game.levelManagerProcess(levelData, scene);
-                (EngineNode.Sprite2DWithState(sprite, NodeTag.LevelManager(newData)), newScene)
             case EngineNode.CanvasLayerWithState(layer, NodeTag.GameOverAnim(_)) =>
                 let newScene = GameOverScene.updateAnimation(delta, scene);
                 let newState = match Scene.getState(GameOverScene.layerPath(), newScene) {
@@ -144,6 +123,27 @@ instance Node[NodeTag] {
                     case _         => NodeTag.GameOverAnim({elapsed = 0.0})
                 };
                 checked_ecast((EngineNode.CanvasLayerWithState(layer, newState), newScene))
+            case EngineNode.StaticBody2DWithState(_, NodeTag.Ground) =>
+                let pos = Scene.globalPositionAt(path, scene);
+                let halfWidth = GroundScene.groundWidth() / 2.0;
+                if (pos#x + halfWidth < Game.getViewportLeftX(scene))
+                    checked_ecast((node, Scene.removeAtAndNotify(path, scene)))
+                else
+                    (node, scene)
+            case EngineNode.StaticBody2DWithState(_, NodeTag.Pipe) =>
+                let pos = Scene.globalPositionAt(path, scene);
+                if (pos#x + PipeScene.pipeHalfWidth() < Game.getViewportLeftX(scene)) {
+                    // 同 X のパイプペア（Top + Bottom + Coin/NoTag）を全削除
+                    // 自分は最後に removeAtAndNotify で再生成を発火（Top/Bottom どちらが先でも OK）
+                    let pipeX = pos#x;
+                    let pairPaths = Scene.getNodesInGroup(PipeScene.pipeGroup(), scene)
+                        |> List.filter(p -> Scene.globalPositionAt(p, scene)#x == pipeX);
+                    let cleanedScene = List.foldLeft((sc, p) ->
+                        if (p == path) sc
+                        else Scene.removeAt(p, sc)
+                    , scene, pairPaths);
+                    checked_ecast((node, Scene.removeAtAndNotify(path, cleanedScene)))
+                } else (node, scene)
             case _ => checked_ecast((node, scene))
         }
 
@@ -221,6 +221,27 @@ instance AreaHandler[NodeTag] {
 }
 
 // ========================================================================
+// NodeRemovedHandler 実装（godot tree_exited シグナル相当）
+// 自殺した Ground / Pipe ペアの Coin を受けて、新しい個体を spawn する
+// ========================================================================
+
+instance NodeRemovedHandler[NodeTag] {
+    type Aef = { Math.Random }
+    redef onNodeRemoved(_path: NodePath, state: NodeTag,
+                        scene: Scene[NodeTag]): Scene[NodeTag] \ Math.Random =
+        match state {
+            case NodeTag.Ground =>
+                let nextX = Game.maxGroundX(scene) + GroundScene.groundWidth();
+                let id = Float64.tryToInt32(nextX) |> Option.getWithDefault(0);
+                checked_ecast(GroundScene.spawnGround("ground_${id}", nextX, scene))
+            case NodeTag.Pipe =>
+                let score = ScoreScene.getScore(scene);
+                PipeScene.spawnRecycledPair(score, scene)
+            case _ => checked_ecast(scene)
+        }
+}
+
+// ========================================================================
 // mod Game
 // ========================================================================
 
@@ -257,33 +278,19 @@ mod Game {
     def bgSpriteName(): String = "bg_sprite"
 
     // ========================================================================
-    // レベル管理ノード
-    // ========================================================================
-
-    /// レベル管理ノード名
-    def levelManagerName(): String = "level_manager"
-
-    /// Scene から LevelManagerData を取り出す
-    pub def getLevelManagerData(scene: Scene[NodeTag]): LevelManagerData =
-        match Scene.getState(levelManagerName() :: Nil, scene) {
-            case Some(NodeTag.LevelManager(data)) => data
-            case _ => bug!("level_manager not found")
-        }
-
-    // ========================================================================
     // フェーズ判定（Scene 構造から導出）
     // ========================================================================
 
     /// Scene の構造から現在のゲームフェーズを判定する
-    /// GameOver layer 存在 → GameOver / LevelManager 存在 → Playing / それ以外 → Menu
+    /// GameOver layer 存在 → GameOver / Pipe 存在 → Playing / それ以外 → Menu
     pub def currentPhase(scene: Scene[NodeTag]): GamePhase =
         match Scene.getEngineNode(GameOverScene.layerPath(), scene) {
             case Some(_) => GamePhase.GameOver
             case None    =>
-                match Scene.getEngineNode(levelManagerName() :: Nil, scene) {
-                    case Some(_) => GamePhase.Playing
-                    case None    => GamePhase.Menu
-                }
+                if (List.length(Scene.getNodesInGroup(PipeScene.pipeGroup(), scene)) > 0)
+                    GamePhase.Playing
+                else
+                    GamePhase.Menu
         }
 
     /// ゲーム開始入力を受け付けるか判定する
@@ -302,30 +309,20 @@ mod Game {
     /// ゲームの初期状態を構築する
     /// bestScore: セッション中のベストスコア（初回は 0）
     pub def buildState(fontAtlas: FontAtlas, bestScore: BestScore): GameState \ Math.Random =
-        let (sceneWithGrounds, groundCounter, nextGroundX) =
+        let (sceneWithGrounds, _, _) =
             Scene.empty()
                 |> addBackground
                 |> BirdScene.addBird
                 |> addCamera
                 |> ScoreScene.addHud(fontAtlas, bestScore)
                 |> GroundScene.addGrounds;
-        let (sceneWithPipes, pipeCounter, nextPipeX) =
-            PipeScene.addPipes(sceneWithGrounds);
-        let levelData: LevelManagerData = {
-            groundCounter = groundCounter, nextGroundX = nextGroundX,
-            pipeCounter = pipeCounter, nextPipeX = nextPipeX
-        };
-        let manager = Sprite2D.make("", Vec2.zero(), {x = 1.0, y = 1.0});
-        let scene = sceneWithPipes
-            |> Scene.addNode(levelManagerName(),
-                EngineNode.Sprite2DWithState(manager, NodeTag.LevelManager(levelData)));
-        {scene = scene, phase = GamePhase.Playing}
+        let (sceneWithPipes, _, _) = PipeScene.addPipes(sceneWithGrounds);
+        {scene = sceneWithPipes, phase = GamePhase.Playing}
 
     /// メニュー画面の初期状態を構築する
     /// 背景 + 鳥(Flying) + カメラ + HUD(スコア非表示) + 地面 + メニュー UI
-    /// パイプ・LevelManager なし
     pub def buildMenuState(fontAtlas: FontAtlas, bestScore: BestScore): GameState =
-        let (sceneWithGrounds, _groundCounter, _nextGroundX) =
+        let (sceneWithGrounds, _, _) =
             Scene.empty()
                 |> addBackground
                 |> BirdScene.addBirdForMenu
@@ -443,23 +440,12 @@ mod Game {
         let birdPos = Scene.globalPosition("bird", scene);
         birdPos#x + cameraOffsetX()
 
-    // ========================================================================
-    // LevelManager process（リサイクル + スコア表示）
-    // ========================================================================
-
-    /// LevelManager の process コールバック
-    /// 地面・パイプのリサイクルを行う
-    pub def levelManagerProcess(levelData: LevelManagerData,
-                                scene: Scene[NodeTag]): (LevelManagerData, Scene[NodeTag]) \ Math.Random =
-        let viewportLeftX = getViewportLeftX(scene);
-        let (groundScene, newGC, newGX) = GroundScene.recycleGrounds(
-            viewportLeftX, levelData#groundCounter, levelData#nextGroundX, scene);
-        let score = ScoreScene.getScore(groundScene);
-        let (pipeScene, newPC, newPX) = PipeScene.recyclePipes(
-            viewportLeftX, levelData#pipeCounter, levelData#nextPipeX, score, groundScene);
-        ({groundCounter = newGC, nextGroundX = newGX,
-          pipeCounter = newPC, nextPipeX = newPX},
-         pipeScene)
+    /// 地面グループ内の最右端 X 座標を返す（NodeRemovedHandler の再配置に使う）
+    pub def maxGroundX(scene: Scene[NodeTag]): Float64 =
+        Scene.getNodesInGroup(GroundScene.groundGroup(), scene)
+            |> List.map(p -> Scene.globalPositionAt(p, scene)#x)
+            |> List.maximum
+            |> Option.getWithDefault(0.0)
 
     // ========================================================================
     // メインループ

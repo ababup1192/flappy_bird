@@ -148,6 +148,20 @@ mod PipeScene {
                 (newScene, counter + 1, nextX + spacing)
             , (scene, 0, firstPipeX()))
 
+    /// パイプグループ内の最右端 X 座標を返す（リサイクル位置決定に使用）
+    pub def maxPipeX(scene: Scene[NodeTag]): Float64 =
+        Scene.getNodesInGroup(pipeGroup(), scene)
+            |> List.map(p -> Scene.globalPositionAt(p, scene)#x)
+            |> List.maximum
+            |> Option.getWithDefault(0.0)
+
+    /// リサイクル時に新ペアを spawn する
+    /// 新ペアの X は現在の最右端 + pipeSpacingX。ID は X 座標から導出
+    pub def spawnRecycledPair(score: Int32, scene: Scene[NodeTag]): Scene[NodeTag] \ Math.Random =
+        let nextX = maxPipeX(scene) + pipeSpacingX();
+        let id = Float64.tryToInt32(nextX) |> Option.getWithDefault(0);
+        spawnPipePair(id, nextX, score, scene)
+
     // ========================================================================
     // パイプリサイクル
     // ========================================================================
