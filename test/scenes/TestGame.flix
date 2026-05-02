@@ -61,10 +61,6 @@ def testFontAtlas(): FontAtlas = {
 
 /// テスト用ヘルパー: buildState のシーンを取得（Math.Random をモックで処理）
 def testScene(): Scene[NodeTag] =
-    withMockRandom(() -> Game.buildState(testFontAtlas(), 0)#scene)
-
-/// テスト用ヘルパー: buildState の GameState を取得（Math.Random をモックで処理）
-def testState(): GameState =
     withMockRandom(() -> Game.buildState(testFontAtlas(), 0))
 
 /// Vec2 をタプルに変換するヘルパー
@@ -101,11 +97,6 @@ def testBuildSceneNodeCount(): Unit \ Assert =
 @Test
 def testBuildSceneRootCount(): Unit \ Assert =
     Assert.assertEq(expected = 9, Map.size(Scene.states(testScene())))
-
-/// 初期フェーズは Playing
-@Test
-def testBuildStatePhase(): Unit \ Assert =
-    Assert.assertEq(expected = GamePhase.Playing, testState()#phase)
 
 /// 初期 ground タイル数は 2（ground_0, ground_1）
 @Test
@@ -809,18 +800,6 @@ def testBirdPipeCollisionHitToGroundedOnDifferentPipe(): Unit \ Assert =
             |> BirdScene.onBirdHitPipe(pipePath = landedPipePath));
     Assert.assertEq(expected = BirdState.Grounded, BirdScene.getBirdData(scene)#state)
 
-/// bodyHasCollisionException は handleHit で登録したパスに対して true を返すこと
-@Test
-def testBodyHasCollisionException(): Unit \ Assert =
-    let pipePath = PipeScene.topPath(PipeScene.pairName(0));
-    let otherPath = PipeScene.bottomPath(PipeScene.pairName(1));
-    let scene = withMockAudioAndState(() ->
-        testScene() |> BirdScene.handleHit(pipePath));
-    Assert.assertEq(
-        expected = (true, false),
-        (BirdScene.bodyHasCollisionException(pipePath, scene),
-         BirdScene.bodyHasCollisionException(otherPath, scene)))
-
 /// Grounded 状態でパイプ衝突しても変化しないこと
 @Test
 def testBirdPipeCollisionGroundedNoChange(): Unit \ Assert =
@@ -969,16 +948,7 @@ def testBuildStateNodeCountUnchanged(): Unit \ Assert =
 
 /// テスト用ヘルパー: buildMenuState のシーンを取得
 def testMenuScene(): Scene[NodeTag] =
-    Game.buildMenuState(testFontAtlas(), 0)#scene
-
-/// テスト用ヘルパー: buildMenuState の GameState を取得
-def testMenuState(): GameState =
     Game.buildMenuState(testFontAtlas(), 0)
-
-/// メニューの初期フェーズは Menu
-@Test
-def testMenuStatePhase(): Unit \ Assert =
-    Assert.assertEq(expected = GamePhase.Menu, testMenuState()#phase)
 
 /// メニュー画面の鳥の状態は Flying
 @Test

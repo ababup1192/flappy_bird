@@ -47,9 +47,10 @@ mod BirdScene {
     // ========================================================================
 
     /// 鳥の状態データ（フレーム間で変化する純粋データ）
-    /// state: 鳥の状態マシン
-    /// speed: 横方向の移動速度（px/秒）
-    pub type alias BirdData = {state = BirdState, speed = Float64}
+    /// state:   鳥の状態マシン
+    /// speed:   横方向の移動速度（px/秒）
+    /// hitPipe: Hit 状態に遷移する原因となったパイプの NodePath（onBirdHitPipe での同一パイプ判定に使う）
+    pub type alias BirdData = {state = BirdState, speed = Float64, hitPipe = Option[NodePath]}
 
     // ========================================================================
     // 定数 — ノード名・パス
@@ -142,7 +143,7 @@ mod BirdScene {
             Vec2.zero(),
             {x = 2.0, y = 2.0});
         let area = Area2D.make(Vec2.zero(), birdCollisionShape());
-        let birdData: BirdData = {state = BirdState.Flapping, speed = birdSpeed()};
+        let birdData: BirdData = {state = BirdState.Flapping, speed = birdSpeed(), hitPipe = None};
         scene
             |> Scene.addNode(name(),
                 EngineNode.RigidBody2DWithState(body, NodeTag.Bird(birdData)))
@@ -164,7 +165,7 @@ mod BirdScene {
             Vec2.zero(),
             {x = 2.0, y = 2.0});
         let area = Area2D.make(Vec2.zero(), birdCollisionShape());
-        let birdData: BirdData = {state = BirdState.Flying, speed = 0.0};
+        let birdData: BirdData = {state = BirdState.Flying, speed = 0.0, hitPipe = None};
         scene
             |> Scene.addNode(name(),
                 EngineNode.RigidBody2DWithState(body, NodeTag.Bird(birdData)))
@@ -285,7 +286,7 @@ mod BirdScene {
                 |> RigidBody2D.setLinearVelocity(Vec2.zero())
                 |> RigidBody2D.setAngularVelocity(2.0)
                 |> RigidBody2D.addCollisionException(otherBodyPath),
-             {state = BirdState.Hit | birdData}));
+             {state = BirdState.Hit, hitPipe = Some(otherBodyPath) | birdData}));
         BirdStateChanged.emit(BirdState.Hit, updatedScene)
 
     /// 鳥を Grounded 状態に遷移させる（bird.gd `GroundedState._init` 相当）
@@ -320,15 +321,16 @@ mod BirdScene {
 
     /// 鳥がパイプに衝突したときの処理
     /// Flapping → Hit: 衝突パイプを collisionException に登録し、鳥は重力で落下する
-    /// Hit → Grounded: 衝突パイプが exception に未登録 = 別パイプの上に乗ってしまった
+    /// Hit → Grounded: hitPipe と異なるパイプに当たった = 別パイプの上に乗ってしまった
     ///                 状態とみなし、Grounded に遷移してゲームオーバーへ繋ぐ
     /// SE は handleHit / handleGrounded 内で再生、camera shake は BirdStateChanged ハンドラ側で発火される
     pub def onBirdHitPipe(pipePath: {pipePath = NodePath}, scene: Scene[NodeTag]): Scene[NodeTag] \ {GameEngine.Audio, BirdStateChanged} =
-        match getBirdData(scene)#state {
+        let birdData = getBirdData(scene);
+        match birdData#state {
             case BirdState.Flapping =>
                 handleHit(pipePath#pipePath, scene)
             case BirdState.Hit =>
-                if (bodyHasCollisionException(pipePath#pipePath, scene)) scene
+                if (Some(pipePath#pipePath) == birdData#hitPipe) scene
                 else handleGrounded(scene)
             case _ => scene
         }
@@ -352,14 +354,5 @@ mod BirdScene {
         match Scene.getState(birdPath(), scene) {
             case Some(NodeTag.Bird(birdData)) => birdData
             case _ => bug!("bird not found")
-        }
-
-    /// 鳥の RigidBody2D が otherPath を collisionExceptions に登録しているか
-    /// Hit 状態で別パイプに着地したかを判定するために使う
-    pub def bodyHasCollisionException(otherPath: NodePath, scene: Scene[NodeTag]): Bool =
-        match Scene.getEngineNode(birdPath(), scene) {
-            case Some(EngineNode.RigidBody2DWithState(body, _)) =>
-                RigidBody2D.hasCollisionException(otherPath, body)
-            case _ => false
         }
 }

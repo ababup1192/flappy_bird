@@ -15,7 +15,7 @@ pub enum GamePhase with Eq, ToString {
 }
 
 /// ステージ遷移要求イベント（godot stage_manager.change_stage 相当）
-/// ButtonHandler / BirdStateChanged から発火し、gameLoop が次フレームで処理する
+/// InputHandler / ButtonHandler から発火し、gameLoop が次フレームで処理する
 pub eff StageRequested {
     def emit(target: GamePhase): Unit
 }
@@ -58,18 +58,6 @@ pub enum NodeTag {
     /// タグ不要なノード（スプライト子ノード、ボタン等）
     /// ボタンの識別は ButtonHandler 側で path 比較によって行う
     case NoTag
-}
-
-// ========================================================================
-// ゲーム状態
-// ========================================================================
-
-/// ゲーム全体の状態レコード
-/// scene: シーングラフ（ゲームの全状態は NodeTag バリアントに集約）
-/// phase: ゲームフェーズ
-pub type alias GameState = {
-    scene = Scene[NodeTag],
-    phase = GamePhase
 }
 
 // ========================================================================
@@ -238,30 +226,28 @@ mod Game {
     // 初期状態構築
     // ========================================================================
 
-    /// ゲームの初期状態を構築する
+    /// ゲームの初期シーンを構築する
     /// bestScore: セッション中のベストスコア（初回は 0）
-    pub def buildState(fontAtlas: FontAtlas, bestScore: BestScore): GameState \ Math.Random =
-        let scene = Scene.empty()
+    pub def buildState(fontAtlas: FontAtlas, bestScore: BestScore): Scene[NodeTag] \ Math.Random =
+        Scene.empty()
             |> addBackground
             |> BirdScene.addBird
             |> CameraScene.addCamera(BirdScene.name())
             |> ScoreScene.addHud(fontAtlas, bestScore)
             |> GroundScene.addGrounds
-            |> PipeScene.addPipes;
-        {scene = scene, phase = GamePhase.Playing}
+            |> PipeScene.addPipes
 
-    /// メニュー画面の初期状態を構築する
+    /// メニュー画面の初期シーンを構築する
     /// 背景 + 鳥(Flying) + カメラ + HUD(スコア非表示) + 地面 + メニュー UI
-    pub def buildMenuState(fontAtlas: FontAtlas, bestScore: BestScore): GameState =
-        let scene = Scene.empty()
+    pub def buildMenuState(fontAtlas: FontAtlas, bestScore: BestScore): Scene[NodeTag] =
+        Scene.empty()
             |> addBackground
             |> BirdScene.addBirdForMenu
             |> CameraScene.addCamera(BirdScene.name())
             |> ScoreScene.addHud(fontAtlas, bestScore)
             |> GroundScene.addGrounds
             |> MenuScene.addMenuUI
-            |> ScoreScene.hideScoreLabel;
-        {scene = scene, phase = GamePhase.Menu}
+            |> ScoreScene.hideScoreLabel
 
     // ========================================================================
     // シーン構築ヘルパー
@@ -300,8 +286,8 @@ mod Game {
 
     /// ゲームのエントリポイント
     /// godot の bird.state_changed + stage_manager.change_stage シグナルに対応:
-    ///   - BirdStateChanged: Hit/Grounded でカメラシェイク、Grounded で GameOver 遷移発火
-    ///   - StageRequested:   ButtonHandler / BirdStateChanged からの遷移要求を Ref に蓄積
+    ///   - BirdStateChanged: Hit でシェイク、Grounded でシェイク + GameOver 画面追加
+    ///   - StageRequested:   InputHandler / ButtonHandler からの遷移要求を Ref に蓄積
     pub def start(fontAtlas: FontAtlas): Unit \ {GameEngine.Game, GameEngine.Audio, Math.Random, IO} =
         region rc {
             let pending: Ref[Option[GamePhase], rc] = Ref.fresh(rc, None);
@@ -314,7 +300,6 @@ mod Game {
                             CameraScene.triggerShake(CameraScene.shakeIntensity(),
                                                      CameraScene.shakeDuration(), scene)
                         case BirdState.Grounded =>
-                            StageRequested.emit(GamePhase.GameOver);
                             scene
                                 |> CameraScene.triggerShake(CameraScene.shakeIntensity(),
                                                             CameraScene.shakeDuration())
@@ -331,36 +316,34 @@ mod Game {
             }
         }
 
-    /// 蓄積された遷移要求を読み出し、次の GameState を返す
-    /// Playing: シーンを作り直す。GameOver: phase だけ切替（scene は BirdStateChanged が組み済み）。
+    /// 蓄積された遷移要求を読み出し、次のシーンを返す
+    /// Playing: シーンを作り直す。それ以外は scene をそのまま返す
+    /// （GameOver の scene 遷移は BirdStateChanged ハンドラが組み済み）
     def applyPendingPhase(fontAtlas: FontAtlas,
-                          state: GameState,
-                          scene: Scene[NodeTag],
-                          pending: Ref[Option[GamePhase], r]):
-                          GameState \ {GameEngine.Audio, Math.Random, r} =
+                          pending: Ref[Option[GamePhase], r],
+                          scene: Scene[NodeTag]):
+                          Scene[NodeTag] \ {GameEngine.Audio, Math.Random, r} =
         let req = Ref.get(pending);
         Ref.put(None, pending);
         match req {
             case Some(GamePhase.Playing) =>
                 GameEngine.Audio.playAudio("sfx_swooshing");
                 buildState(fontAtlas, ScoreScene.getBestScore(scene))
-            case Some(GamePhase.GameOver) =>
-                {scene = scene, phase = GamePhase.GameOver}
-            case _ =>
-                {scene = scene, phase = state#phase}
+            case _ => scene
         }
 
     /// メインループ: shouldClose 判定 → engineUpdate → applyPendingPhase → render
     /// フェーズ判定はすべて handler 側に移譲。gameLoop は scene を回すだけ。
-    def gameLoop(fontAtlas: FontAtlas, state: GameState, pending: Ref[Option[GamePhase], r]):
+    def gameLoop(fontAtlas: FontAtlas, scene: Scene[NodeTag], pending: Ref[Option[GamePhase], r]):
                  Unit \ {GameEngine.Game, GameEngine.Audio, Math.Random, BirdStateChanged, StageRequested, r} =
         if (GameEngine.Game.shouldClose() or
             GameEngine.Game.isKeyPressed(GameEngine.Key.Escape)) ()
         else {
             let dt = GameEngine.Game.getDeltaTime();
-            let updatedScene = state#scene |> engineUpdate(dt);
-            let nextState = applyPendingPhase(fontAtlas, state, updatedScene, pending);
-            GameEngine.render(nextState#scene);
-            gameLoop(fontAtlas, nextState, pending)
+            let nextScene = scene
+                |> engineUpdate(dt)
+                |> applyPendingPhase(fontAtlas, pending);
+            GameEngine.render(nextScene);
+            gameLoop(fontAtlas, nextScene, pending)
         }
 }
