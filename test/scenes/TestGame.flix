@@ -5,10 +5,20 @@
 // ========================================================================
 
 /// Math.Random のモックハンドラ（randomFloat64 → 0.5）
-def withMockRandom(f: Unit -> a \ Math.Random): a =
+/// effect 多相にしてあるので body に他の effect が混ざっても通る
+def withMockRandom(f: Unit -> a \ ef + Math.Random): a \ ef =
     run f() with handler Math.Random {
         def randomFloat64(k) = k(0.5)
         def randomInt64(k) = k(42i64)
+    }
+
+/// Recycle のモックハンドラ。実 spawn 関数に委譲する（内部で Math.Random を使う）
+/// 単独では使えないので呼び出し元で必ず withMockRandom と組み合わせること
+def withMockRecycle(f: Unit -> a \ ef + Recycle): a \ ef + Math.Random =
+    run f() with handler Recycle {
+        def ground(scene, k) = k(GroundScene.spawnRecycledGround(scene))
+        def pipe(scene, k) =
+            k(PipeScene.spawnRecycledPair(ScoreScene.getScore(scene), scene))
     }
 
 /// GameEngine.Audio のモックハンドラ（playAudio/stopAudio は no-op）
@@ -423,7 +433,7 @@ def testFlapAngularVelocityAfterClamp(): Unit \ Assert =
 @Test
 def testBirdSpriteAnimationAdvances(): Unit \ Assert =
     // fps=10, 0.15s 後にフレーム 1 に進む (frameDuration = 0.1s)
-    match withMockRandom(() -> testScene() |> Scene.processAll(0.15, false))
+    match withMockRandom(() -> withMockRecycle(() -> testScene() |> Scene.processAll(0.15, false)))
         |> Scene.getEngineNode("bird" :: "sprite" :: Nil) {
         case Some(EngineNode.AnimSprite2DWithState(sprite, _)) =>
             Assert.assertEq(expected = "bird_orange_1", AnimatedSprite2D.currentTexture(sprite))
@@ -819,13 +829,13 @@ def testBirdPipeCollisionGroundedNoChange(): Unit \ Assert =
 @Test
 def testPipeRecyclesWhenOffScreen(): Unit \ Assert =
     let pair0 = PipeScene.pairName(0);
-    let result = withMockRandom(() -> {
+    let result = withMockRandom(() -> withMockRecycle(() -> {
         let initial = testScene();
         // bird を pipe_0(x=576) より遠く（x=2000）に移動 → camera 追従後 viewportLeftX=1928
         let movedBird = Scene.setGlobalPositionAt("bird" :: Nil,
             {x = 2000.0, y = 200.0}, initial);
         Scene.processAll(0.016, false, movedBird)
-    });
+    }));
     let pairCount = List.length(Scene.getNodesInGroup(PipeScene.pipeGroup(), result));
     let pair0Removed = Option.isEmpty(Scene.getEngineNode(pair0 :: Nil, result));
     // pipe_0 は削除され、新 pair が spawn されているのでペア数 3 維持
@@ -837,7 +847,7 @@ def testPipeRecyclesWhenOffScreen(): Unit \ Assert =
 @Test
 def testPipeRecyclesAfterCoinPassed(): Unit \ Assert =
     let pair0 = PipeScene.pairName(0);
-    let result = withMockRandom(() -> {
+    let result = withMockRandom(() -> withMockRecycle(() -> {
         let initial = testScene();
         // pipe_0 のコインを通過済み（NoTag）にする
         let afterPass = Scene.setState(PipeScene.coinPath(pair0), NodeTag.NoTag, initial);
@@ -845,7 +855,7 @@ def testPipeRecyclesAfterCoinPassed(): Unit \ Assert =
         let movedBird = Scene.setGlobalPositionAt("bird" :: Nil,
             {x = 2000.0, y = 200.0}, afterPass);
         Scene.processAll(0.016, false, movedBird)
-    });
+    }));
     let pairCount = List.length(Scene.getNodesInGroup(PipeScene.pipeGroup(), result));
     let pair0Removed = Option.isEmpty(Scene.getEngineNode(pair0 :: Nil, result));
     // コイン NoTag 化に影響されず pipe_0 は削除され、新 pair が spawn されている
@@ -1027,6 +1037,6 @@ def testMenuNodeCount(): Unit \ Assert =
 def testMenuBirdStatic(): Unit \ Assert =
     let scene = testMenuScene();
     let posBefore = Scene.globalPosition("bird", scene);
-    let sceneAfter = withMockRandom(() -> scene |> Scene.processAll(0.5, false));
+    let sceneAfter = withMockRandom(() -> withMockRecycle(() -> scene |> Scene.processAll(0.5, false)));
     let posAfter = Scene.globalPosition("bird", sceneAfter);
     Assert.assertTrue(Float64.abs(posAfter#y - posBefore#y) < 0.001)

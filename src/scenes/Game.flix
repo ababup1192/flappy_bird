@@ -23,6 +23,16 @@ pub eff Phase {
     def set(target: GamePhase): Unit
 }
 
+/// 自殺したノードのリサイクル要求エフェクト
+/// NodeRemovedHandler は scene を渡して新しい scene を受け取る。
+/// ハンドラ側で Math.Random + spawn 関数を実行することで、
+/// Node[NodeTag] / NodeRemovedHandler[NodeTag] の Aef から
+/// Math.Random 直接依存を取り除いている。
+pub eff Recycle {
+    def ground(scene: Scene[NodeTag]): Scene[NodeTag]
+    def pipe(scene: Scene[NodeTag]): Scene[NodeTag]
+}
+
 // ========================================================================
 // ノードタグ
 // ========================================================================
@@ -68,10 +78,10 @@ pub enum NodeTag {
 // ========================================================================
 
 instance Node[NodeTag] {
-    type Aef = { Math.Random }
+    type Aef = { Recycle }
     // Bird: bird.gd `FlappingState._init → flap()` 相当の初期 flap を発火
     redef ready(node: EngineNode[NodeTag], path: NodePath,
-                scene: Scene[NodeTag]): (EngineNode[NodeTag], Scene[NodeTag]) \ Math.Random =
+                scene: Scene[NodeTag]): (EngineNode[NodeTag], Scene[NodeTag]) \ Recycle =
         match node {
             case EngineNode.RigidBody2DWithState(_, NodeTag.Bird(_)) =>
                 checked_ecast(BirdScene.ready(node, path, scene))
@@ -81,12 +91,12 @@ instance Node[NodeTag] {
     // 各シーンへ委譲するだけのディスパッチ
     // Bird は bird.gd に倣い _process を使わない（physicsProcess のみ）
     redef process(delta: Float64, node: EngineNode[NodeTag],
-                  path: NodePath, scene: Scene[NodeTag]): (EngineNode[NodeTag], Scene[NodeTag]) \ Math.Random =
+                  path: NodePath, scene: Scene[NodeTag]): (EngineNode[NodeTag], Scene[NodeTag]) \ Recycle =
         match node {
             case EngineNode.Camera2DWithState(_, NodeTag.Camera(_)) =>
-                CameraScene.process(delta, node, scene)
+                checked_ecast(CameraScene.process(delta, node, scene))
             case EngineNode.CanvasLayerWithState(_, NodeTag.GameOverAnim(_)) =>
-                GameOverScene.process(delta, node, scene)
+                checked_ecast(GameOverScene.process(delta, node, scene))
             case EngineNode.StaticBody2DWithState(_, NodeTag.Ground) =>
                 GroundScene.process(node, path, scene)
             case EngineNode.Marker2DWithState(_, NodeTag.Pipe) =>
@@ -96,7 +106,7 @@ instance Node[NodeTag] {
 
     // Bird: 回転 -30° クランプ + 落下時 angVel = 1.5（bird.gd FlappingState.update 準拠）
     redef physicsProcess(delta: Float64, node: EngineNode[NodeTag],
-                         path: NodePath, scene: Scene[NodeTag]): (EngineNode[NodeTag], Scene[NodeTag]) \ Math.Random =
+                         path: NodePath, scene: Scene[NodeTag]): (EngineNode[NodeTag], Scene[NodeTag]) \ Recycle =
         match node {
             case EngineNode.RigidBody2DWithState(_, NodeTag.Bird(_)) =>
                 checked_ecast(BirdScene.physicsProcess(delta, node, path, scene))
@@ -173,16 +183,13 @@ instance AreaHandler[NodeTag] {
 // ========================================================================
 
 instance NodeRemovedHandler[NodeTag] {
-    type Aef = { Math.Random }
+    type Aef = { Recycle }
     redef onNodeRemoved(_path: NodePath, state: NodeTag,
-                        scene: Scene[NodeTag]): Scene[NodeTag] \ Math.Random =
+                        scene: Scene[NodeTag]): Scene[NodeTag] \ Recycle =
         match state {
-            case NodeTag.Ground =>
-                checked_ecast(GroundScene.spawnRecycledGround(scene))
-            case NodeTag.Pipe =>
-                let score = ScoreScene.getScore(scene);
-                PipeScene.spawnRecycledPair(score, scene)
-            case _ => checked_ecast(scene)
+            case NodeTag.Ground => Recycle.ground(scene)
+            case NodeTag.Pipe => Recycle.pipe(scene)
+            case _ => scene
         }
 }
 
@@ -278,6 +285,8 @@ mod Game {
     /// ゲームのエントリポイント
     /// Phase は region 内の Ref 1 個で保持。handler 群が `Phase.set` で書き換え、
     /// gameLoop が前フレームとの差分を検出して scene を組み立てる。
+    /// Recycle ハンドラはノード自殺時のリサイクル要求を Math.Random + spawn 関数で
+    /// 実体化する責務を担う（NodeRemovedHandler から Math.Random を切り離すため）。
     pub def start(fontAtlas: FontAtlas): Unit \ {GameEngine.Game, GameEngine.Audio, Math.Random} =
         region rc {
             let phaseRef: Ref[GamePhase, rc] = Ref.fresh(rc, GamePhase.Menu);
@@ -300,6 +309,10 @@ mod Game {
             } with handler Phase {
                 def get(k) = k(Ref.get(phaseRef))
                 def set(target, k) = { Ref.put(target, phaseRef); k() }
+            } with handler Recycle {
+                def ground(scene, k) = k(GroundScene.spawnRecycledGround(scene))
+                def pipe(scene, k) =
+                    k(PipeScene.spawnRecycledPair(ScoreScene.getScore(scene), scene))
             }
         }
 
@@ -322,7 +335,7 @@ mod Game {
     /// メインループ: shouldClose 判定 → engineUpdate → phase 差分検出 → render
     /// previousPhase: 前フレーム末の phase（変化検出のため引き連れる）
     def gameLoop(fontAtlas: FontAtlas, previousPhase: GamePhase, scene: Scene[NodeTag]):
-                 Unit \ {GameEngine.Game, GameEngine.Audio, Math.Random, BirdStateChanged, Phase} =
+                 Unit \ {GameEngine.Game, GameEngine.Audio, Math.Random, BirdStateChanged, Phase, Recycle} =
         if (GameEngine.Game.shouldClose() or
             GameEngine.Game.isKeyPressed(GameEngine.Key.Escape)) ()
         else {
