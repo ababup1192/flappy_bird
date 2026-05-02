@@ -7,7 +7,7 @@
 //   CanvasLayerWithState(menu, NoTag)  [layer=2]
 //     ├── Sprite2DWithState(title_logo, NoTag)                  // label_flappy_bird (y=140)
 //     ├── Sprite2DWithState(instructions_img, NoTag)            // instructions (y=340)
-//     └── TextureButtonWithState(play_button, PlayButton)        // button_play_normal (y=440)
+//     └── TextureButtonWithState(play_button, NoTag)            // button_play_normal (y=440)
 
 mod MenuScene {
 

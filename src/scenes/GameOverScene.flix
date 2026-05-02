@@ -10,7 +10,7 @@
 //     ├── Sprite2DWithState(medal, NoTag)                       // メダル（score>=10 のみ）
 //     ├── Label2DWithState(final_score, NoTag)                  // パネル上のスコア数値
 //     ├── Label2DWithState(best_score, NoTag)                   // パネル上のベストスコア数値
-//     └── TextureButtonWithState(play_button, PlayButton)        // Play ボタン
+//     └── TextureButtonWithState(play_button, NoTag)            // Play ボタン
 
 mod GameOverScene {
 
