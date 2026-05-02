@@ -328,10 +328,11 @@ mod Game {
         else {
             let dt = GameEngine.Game.getDeltaTime();
             let updatedScene = scene
-                |> GameEngine.emitInput
-                |> GameEngine.emitButtons
+            
                 |> GameEngine.process(dt, false)
                 |> GameEngine.physicsProcess(dt, false, PhysicsStep.defaultGravity())
+                |> GameEngine.emitInput
+                |> GameEngine.emitButtons
                 |> GameEngine.emitCollision;
             let currentPhase = Phase.get();
             let nextScene = if (currentPhase != previousPhase)
