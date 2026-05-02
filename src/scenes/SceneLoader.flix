@@ -11,7 +11,9 @@
 // Label2D を含むシーンは loadSceneWithFont を使う（FontAtlas が必要）。
 // それ以外は loadScene を使う。
 //
-// 対応ノード型: CanvasLayer / Sprite2D / TextureButton / StaticBody2D / Label2D
+// 対応ノード型:
+//   CanvasLayer / Sprite2D / AnimatedSprite2D / Label2D / TextureButton /
+//   StaticBody2D / RigidBody2D / Area2D
 // 対応 tag: Ground / Pipe / PipePart / Coin / BirdArea / NoTag（デフォルト）
 // 対応 collision shape: RectShape2D / CircleShape2D
 
@@ -137,12 +139,15 @@ mod SceneLoader {
     def buildByType(nodeType: String, fontAtlas: Option[FontAtlas],
                     map: Map[String, Json.JsonElement]): Result[Json.JsonError, EngineNode[NodeTag]] =
         match nodeType {
-            case "CanvasLayer"   => buildCanvasLayer(map)
-            case "Sprite2D"      => buildSprite2D(map)
-            case "TextureButton" => buildTextureButton(map)
-            case "StaticBody2D"  => buildStaticBody2D(map)
-            case "Label2D"       => buildLabel2D(fontAtlas, map)
-            case unknown         =>
+            case "CanvasLayer"      => buildCanvasLayer(map)
+            case "Sprite2D"         => buildSprite2D(map)
+            case "TextureButton"    => buildTextureButton(map)
+            case "StaticBody2D"     => buildStaticBody2D(map)
+            case "Label2D"          => buildLabel2D(fontAtlas, map)
+            case "RigidBody2D"      => buildRigidBody2D(map)
+            case "Area2D"           => buildArea2D(map)
+            case "AnimatedSprite2D" => buildAnimatedSprite2D(map)
+            case unknown            =>
                 Err(JsonError(Root, Set#{"known node type (got: ${unknown})"}))
         }
 
@@ -158,6 +163,16 @@ mod SceneLoader {
         ) yield {
             let (x, y) = pair;
             {x = x, y = y}
+        }
+
+    /// JSON 配列 [x, y] をオプショナルに Vec2.Vec2 に変換する（キーがなければ None）
+    def parseVec2Opt(key: String,
+                     map: Map[String, Json.JsonElement]): Result[Json.JsonError, Option[Vec2.Vec2]] =
+        forM (
+            opt <- (Json.getAtKeyOpt(Root, key, map): Result[Json.JsonError, Option[(Float64, Float64)]])
+        ) yield match opt {
+            case Some((x, y)) => Some({x = x, y = y})
+            case None         => None
         }
 
     /// 任意の "tag" フィールドを NodeTag に変換する。
@@ -276,6 +291,57 @@ mod SceneLoader {
             shape <- parseShape(map)
         ) yield EngineNode.StaticBody2DWithState(StaticBody2D.make(pos, shape), tag)
 
+    /// RigidBody2D ノードを構築する。
+    /// 必須: "pos" / "shape"
+    /// 任意: "gravityScale" / "linearVelocity"（[x, y]）
+    def buildRigidBody2D(map: Map[String, Json.JsonElement]): Result[Json.JsonError, EngineNode[NodeTag]] =
+        forM (
+            tag                 <- parseTag(map);
+            pos                 <- parseVec2("pos", map);
+            shape               <- parseShape(map);
+            gravityScaleOpt     <- (Json.getAtKeyOpt(Root, "gravityScale", map): Result[Json.JsonError, Option[Float64]]);
+            linearVelocityOpt   <- parseVec2Opt("linearVelocity", map)
+        ) yield {
+            let body = RigidBody2D.make(pos, shape)
+                |> applyGravityScale(gravityScaleOpt)
+                |> applyLinearVelocity(linearVelocityOpt);
+            EngineNode.RigidBody2DWithState(body, tag)
+        }
+
+    /// Area2D ノードを構築する。
+    /// 必須: "pos" / "shape"
+    /// 任意: "monitoring"（既定 true）
+    def buildArea2D(map: Map[String, Json.JsonElement]): Result[Json.JsonError, EngineNode[NodeTag]] =
+        forM (
+            tag           <- parseTag(map);
+            pos           <- parseVec2("pos", map);
+            shape         <- parseShape(map);
+            monitoringOpt <- (Json.getAtKeyOpt(Root, "monitoring", map): Result[Json.JsonError, Option[Bool]])
+        ) yield {
+            let area = Area2D.make(pos, shape)
+                |> applyMonitoring(monitoringOpt);
+            EngineNode.Area2DWithState(area, tag)
+        }
+
+    /// AnimatedSprite2D ノードを構築する。
+    /// 必須: "pos" / "scale" / "animations" / "initialAnimation" / "fps"
+    /// "animations" は {animName: [textureName, ...]} 形式の Map
+    def buildAnimatedSprite2D(map: Map[String, Json.JsonElement]): Result[Json.JsonError, EngineNode[NodeTag]] =
+        forM (
+            tag              <- parseTag(map);
+            pos              <- parseVec2("pos", map);
+            scale            <- parseVec2("scale", map);
+            animations       <- (Json.getAtKey(Root, "animations", map): Result[Json.JsonError, Map[String, List[String]]]);
+            initialAnimation <- (Json.getAtKey(Root, "initialAnimation", map): Result[Json.JsonError, String]);
+            fps              <- (Json.getAtKey(Root, "fps", map): Result[Json.JsonError, Float64])
+        ) yield {
+            let sprite = AnimatedSprite2D.make(animations,
+                initialAnimation = initialAnimation,
+                fps = fps,
+                pos, scale);
+            EngineNode.AnimSprite2DWithState(sprite, tag)
+        }
+
     /// Label2D ノードを構築する。
     /// 必須: "text" / "pos" / "fontSize"
     /// 任意: "centered" / "visible" / "zIndex"
@@ -361,5 +427,26 @@ mod SceneLoader {
         match opt {
             case Some(zIndex) => CanvasItem.setZIndex(zIndex, label)
             case None         => label
+        }
+
+    /// 任意の gravityScale を RigidBody2D に適用する（None ならそのまま返す）
+    def applyGravityScale(opt: Option[Float64], body: RigidBody2D): RigidBody2D =
+        match opt {
+            case Some(scale) => RigidBody2D.setGravityScale(scale, body)
+            case None        => body
+        }
+
+    /// 任意の linearVelocity を RigidBody2D に適用する（None ならそのまま返す）
+    def applyLinearVelocity(opt: Option[Vec2.Vec2], body: RigidBody2D): RigidBody2D =
+        match opt {
+            case Some(vel) => RigidBody2D.setLinearVelocity(vel, body)
+            case None      => body
+        }
+
+    /// 任意の monitoring を Area2D に適用する（None ならそのまま返す）
+    def applyMonitoring(opt: Option[Bool], area: Area2D): Area2D =
+        match opt {
+            case Some(monitoring) => Area2D.setMonitoring(monitoring, area)
+            case None             => area
         }
 }

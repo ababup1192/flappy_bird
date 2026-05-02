@@ -107,72 +107,38 @@ mod BirdScene {
     def birdGravityScale(): Float64 = 1.0
 
     // ========================================================================
-    // 定数 — 衝突形状・アニメーション
+    // シーン定義 JSON のパス
     // ========================================================================
 
-    /// 鳥の衝突形状（CircleShape2D, 半径 13px = 参考実装 6.5 の 2 倍）
-    def birdCollisionShape(): CollisionShape2D =
-        CollisionShape2D.CircleShape2D({radius = 13.0})
-
-    /// アニメーション名
-    def flapAnimName(): String = "flap"
-
-    /// 鳥のアニメーション定義（3 フレーム）
-    def birdAnimations(): Map[String, List[String]] =
-        Map#{
-            flapAnimName() => ("bird_orange_0" :: "bird_orange_1" :: "bird_orange_2" :: Nil)
-        }
-
-    /// 鳥の初期位置（画面中央付近）
-    def startPosition(): Vec2.Vec2 = {x = 144.0, y = 256.0}
+    /// 鳥のシーン定義 JSON ファイルのパス
+    def sceneJsonPath(): String = "src/scenes/BirdScene.scene.json"
 
     // ========================================================================
     // シーン構築
     // ========================================================================
 
-    /// 鳥のノードをシーンに追加する
-    /// RigidBody2D（物理ボディ）+ AnimatedSprite2D（見た目）+ Area2D（衝突検知）
-    pub def addBird(scene: Scene[NodeTag]): Scene[NodeTag] =
-        let body = RigidBody2D.make(startPosition(), birdCollisionShape())
-            |> RigidBody2D.setGravityScale(birdGravityScale())
-            |> RigidBody2D.setLinearVelocity({x = birdSpeed(), y = 0.0});
-        let sprite = AnimatedSprite2D.make(
-            birdAnimations(),
-            initialAnimation = flapAnimName(),
-            fps = 10.0,
-            Vec2.zero(),
-            {x = 2.0, y = 2.0});
-        let area = Area2D.make(Vec2.zero(), birdCollisionShape());
+    /// 鳥のノードをシーンに追加する（プレイ用）。
+    /// 構造は BirdScene.scene.json から読み込み、Bird(BirdData)タグと
+    /// gravityScale / linearVelocity を post-load で適用する
+    pub def addBird(scene: Scene[NodeTag]): Scene[NodeTag] \ Fs.FileRead =
         let birdData: BirdData = {state = BirdState.Flapping, speed = birdSpeed(), hitPipe = None};
-        scene
-            |> Scene.addNode(name(),
-                EngineNode.RigidBody2DWithState(body, NodeTag.Bird(birdData)))
-            |> Scene.addChild(name(), spriteName(),
-                EngineNode.AnimSprite2DWithState(sprite, NodeTag.NoTag))
-            |> Scene.addChild(name(), areaName(),
-                EngineNode.Area2DWithState(area, NodeTag.BirdArea))
+        SceneLoader.loadScene(sceneJsonPath(), scene)
+            |> Scene.setState(birdPath(), NodeTag.Bird(birdData))
+            |> Scene.mapEngineNode(birdPath(),
+                EngineNode.mapRigidBody2D(body -> body
+                    |> RigidBody2D.setGravityScale(birdGravityScale())
+                    |> RigidBody2D.setLinearVelocity({x = birdSpeed(), y = 0.0})))
 
-    /// メニュー画面用の鳥をシーンに追加する
+    /// メニュー画面用の鳥をシーンに追加する。
     /// Flying 状態・重力なし・速度ゼロで配置（毎フレーム update は no-op）
-    pub def addBirdForMenu(scene: Scene[NodeTag]): Scene[NodeTag] =
-        let body = RigidBody2D.make(startPosition(), birdCollisionShape())
-            |> RigidBody2D.setGravityScale(0.0)
-            |> RigidBody2D.setLinearVelocity(Vec2.zero());
-        let sprite = AnimatedSprite2D.make(
-            birdAnimations(),
-            initialAnimation = flapAnimName(),
-            fps = 10.0,
-            Vec2.zero(),
-            {x = 2.0, y = 2.0});
-        let area = Area2D.make(Vec2.zero(), birdCollisionShape());
+    pub def addBirdForMenu(scene: Scene[NodeTag]): Scene[NodeTag] \ Fs.FileRead =
         let birdData: BirdData = {state = BirdState.Flying, speed = 0.0, hitPipe = None};
-        scene
-            |> Scene.addNode(name(),
-                EngineNode.RigidBody2DWithState(body, NodeTag.Bird(birdData)))
-            |> Scene.addChild(name(), spriteName(),
-                EngineNode.AnimSprite2DWithState(sprite, NodeTag.NoTag))
-            |> Scene.addChild(name(), areaName(),
-                EngineNode.Area2DWithState(area, NodeTag.BirdArea))
+        SceneLoader.loadScene(sceneJsonPath(), scene)
+            |> Scene.setState(birdPath(), NodeTag.Bird(birdData))
+            |> Scene.mapEngineNode(birdPath(),
+                EngineNode.mapRigidBody2D(body -> body
+                    |> RigidBody2D.setGravityScale(0.0)
+                    |> RigidBody2D.setLinearVelocity(Vec2.zero())))
 
  
     // ========================================================================
