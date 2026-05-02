@@ -80,6 +80,7 @@ def runWithInput(keys: Set[GameEngine.Key],
         def isMouseButtonPressed(btn, k) = k(Set.memberOf(btn, buttons))
         def getFontAtlas(_, _) = bug!("font not used")
         def getViewportRect(k) = k({position = Vec2.zero(), size = {x = 480.0, y = 720.0}})
+        def getTextureInfo(_, k) = k(None)
     }
 
 /// 後方互換: 指定キーが押されている GameEngine.Game ハンドラ

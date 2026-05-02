@@ -296,7 +296,11 @@ mod Game {
                           Fs.FileWrite, Chan, NonDet, IO, Fs.Glob, Fs.ModificationTime} =
         region rc {
             let phaseRef: Ref[GamePhase, rc] = Ref.fresh(rc, GamePhase.Menu);
-            let editorRef: Ref[Editor.EditorStateData, rc] = Ref.fresh(rc, Editor.initialState());
+            // scene.json のルート名 → ファイルパスのインデックスを起動時に作る。
+            // エディタが ON のとき各ノードの書き戻し先 JSON を引くのに使う
+            let editorIndex = Editor.loadJsonRootIndex();
+            let editorRef: Ref[Editor.EditorStateData, rc] =
+                Ref.fresh(rc, Editor.initialState(editorIndex));
             let reloadRx = HotReload.startWatcher();
             run {
                 gameLoop(fontAtlas, GamePhase.Menu, reloadRx, buildMenuScene(fontAtlas, 0))

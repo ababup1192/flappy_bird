@@ -105,6 +105,9 @@ mod GameEngine {
         def isMouseButtonPressed(button: MouseButton): Bool
         def getFontAtlas(name: String): FontAtlas
         def getViewportRect(): Rect2.Rect2
+        /// 指定したテクスチャ名の元画像サイズ等を取得する。
+        /// 登録されていないテクスチャ名なら None
+        def getTextureInfo(name: String): Option[TextureInfo]
     }
 
     /// オーディオエフェクト: サウンドの再生・停止

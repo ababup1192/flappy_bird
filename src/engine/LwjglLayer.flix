@@ -665,6 +665,9 @@ mod LwjglLayer {
             def getViewportRect(k) = {
                 k({position = Vec2.zero(), size = {x = screenW, y = screenH}})
             }
+            def getTextureInfo(name, k) = {
+                k(Map.get(name, registry))
+            }
         };
 
         // OpenAL cleanup
