@@ -1,12 +1,15 @@
 // PipeScene — パイプ障害物の構築・リサイクル
 //
-// パイプは StaticBody2D + 子 Sprite2D で構成される。
-// 上下ペアでギャップを作り、鳥が通過する障害物となる。
-// 画面左端を超えたパイプはリサイクルして右端に再配置する。
+// 上下パイプ + 採点用コインを Marker2D 親ノードでまとめ、親ごと自殺で 4 ノード一括削除する。
+// 画面左端を超えたペアはリサイクルして右端に再配置する無限スクロール方式。
 // スコアが低いうちは上下パイプの隙間を広くし、難易度を段階的に上げる。
 //
-//   StaticBody2DWithState(body, Pipe)
-//     └── Sprite2DWithState(sprite, NoTag)
+//   Marker2DWithState(pipe_${id}, Pipe)
+//     ├── StaticBody2DWithState(top, PipePart)
+//     │     └── Sprite2DWithState(sprite, NoTag)
+//     ├── StaticBody2DWithState(bottom, PipePart)
+//     │     └── Sprite2DWithState(sprite, NoTag)
+//     └── Area2DWithState(coin, Coin)
 
 mod PipeScene {
 

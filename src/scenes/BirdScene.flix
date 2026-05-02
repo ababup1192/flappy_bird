@@ -308,7 +308,7 @@ mod BirdScene {
 
     /// 鳥が地面に衝突したときの処理
     /// 鳥を Grounded 状態にする。地面への押し戻しは PhysicsStep.resolveStaticCollisions が自動処理。
-    /// SE と camera shake は handleGrounded 側で発火される（bird.gd GroundedState._init 準拠）
+    /// SE は handleGrounded 内で再生、camera shake は BirdStateChanged ハンドラ側で発火される
     pub def onBirdHitGround(scene: Scene[NodeTag]): Scene[NodeTag] \ {GameEngine.Audio, BirdStateChanged} =
         let flappingOrHit = match getBirdData(scene)#state {
             case BirdState.Flapping => true
@@ -322,7 +322,7 @@ mod BirdScene {
     /// Flapping → Hit: 衝突パイプを collisionException に登録し、鳥は重力で落下する
     /// Hit → Grounded: 衝突パイプが exception に未登録 = 別パイプの上に乗ってしまった
     ///                 状態とみなし、Grounded に遷移してゲームオーバーへ繋ぐ
-    /// SE と camera shake は handleHit / handleGrounded 側で発火される
+    /// SE は handleHit / handleGrounded 内で再生、camera shake は BirdStateChanged ハンドラ側で発火される
     pub def onBirdHitPipe(pipePath: {pipePath = NodePath}, scene: Scene[NodeTag]): Scene[NodeTag] \ {GameEngine.Audio, BirdStateChanged} =
         match getBirdData(scene)#state {
             case BirdState.Flapping =>

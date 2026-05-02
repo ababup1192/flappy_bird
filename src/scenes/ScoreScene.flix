@@ -85,9 +85,17 @@ mod ScoreScene {
             case other => other
         }, scene)
 
+    /// 現在のスコアを関数 f で変換する
+    pub def mapScore(f: Score -> Score, scene: Scene[NodeTag]): Scene[NodeTag] =
+        setScore(f(getScore(scene)), scene)
+
+    /// 現在のベストスコアを関数 f で変換する
+    pub def mapBestScore(f: BestScore -> BestScore, scene: Scene[NodeTag]): Scene[NodeTag] =
+        setBestScore(f(getBestScore(scene)), scene)
+
     /// スコアを 1 加算し、ラベルテキストも同時に更新する
     pub def incrementScore(scene: Scene[NodeTag]): Scene[NodeTag] =
-        setScore(getScore(scene) + 1, scene)
+        mapScore(s -> s + 1, scene)
 
     /// HUD のスコアラベルを非表示にする（Menu / GameOver 遷移時に使用）
     pub def hideScoreLabel(scene: Scene[NodeTag]): Scene[NodeTag] =
@@ -97,9 +105,7 @@ mod ScoreScene {
     /// 現在のスコアでベストスコアを更新する（max を取って setBestScore）
     pub def finalizeScore(scene: Scene[NodeTag]): Scene[NodeTag] =
         let score = getScore(scene);
-        let currentBest = getBestScore(scene);
-        let newBest = Int32.max(score, currentBest);
-        setBestScore(newBest, scene)
+        mapBestScore(b -> Int32.max(score, b), scene)
 
     /// 鳥がコインを通過したときの処理
     /// スコアを +1 し、効果音を鳴らし、コインの NodeTag を NoTag に変更して再採点を防止する
