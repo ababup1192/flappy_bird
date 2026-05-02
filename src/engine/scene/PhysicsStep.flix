@@ -1,7 +1,6 @@
-/// 物理ステップ — Node.physicsProcess + RigidBody2D の重力・ダンピング・速度積分
+/// 物理ステップ — Node.physicsProcess + RigidBody2D の重力・ダンピング・速度積分・静的衝突解決
 ///
 /// Godot の physics_process に相当する物理更新。
-/// 衝突応答（分離・反発）は今回のスコープ外。
 ///
 /// 使い方:
 ///   PhysicsStep.step(delta, paused, gravity, scene)
@@ -11,17 +10,20 @@
 ///   2. 重力加速: linearVelocity += gravity * gravityScale * delta
 ///   3. ダンピング: linearVelocity /= (1 + linearDamp * delta)
 ///   4. 速度積分: position += linearVelocity * delta, rotation += angularVelocity * delta
+///   5. 静的衝突解決: RigidBody2D を physicsCollisionEnabled な StaticBody2D から押し出し、
+///      接触法線方向の速度をゼロにする
 ///
 pub mod PhysicsStep {
 
     /// デフォルト重力（Godot 準拠: 980 pixels/sec² 下向き）
     pub def defaultGravity(): Vec2.Vec2 = {x = 0.0, y = 980.0}
 
-    /// 物理ステップ: physicsProcess → 重力適用 → ダンピング → 速度積分
+    /// 物理ステップ: physicsProcess → 重力適用 → ダンピング → 速度積分 → 静的衝突解決
     /// 全ノードの physicsProcess を呼んだ後、RigidBody2D に物理更新を適用する。
     pub def step(delta: Float64, paused: Bool, gravity: Vec2.Vec2, scene: Scene[s]): Scene[s] \ Node.Aef[s] with Node[s] =
         let afterPhysicsProcess = Scene.physicsProcessAll(delta, paused, scene);
-        integrate(delta, gravity, afterPhysicsProcess)
+        let afterIntegrate = integrate(delta, gravity, afterPhysicsProcess);
+        resolveStaticCollisions(afterIntegrate)
 
     /// RigidBody2D への重力・ダンピング・速度積分のみ行う（physicsProcess なし）
     pub def integrate(delta: Float64, gravity: Vec2.Vec2, scene: Scene[s]): Scene[s] =
@@ -56,4 +58,69 @@ pub mod PhysicsStep {
             rotation = newRotation
             | r
         })
+
+    /// RigidBody2D が StaticBody2D（physicsCollisionEnabled=true）と重なっている場合、
+    /// 押し出して分離する。法線方向の速度はゼロにする（重力蓄積を防ぐ）。
+    /// Godot の RigidBody2D ↔ StaticBody2D 自動衝突解決相当。
+    pub def resolveStaticCollisions(scene: Scene[s]): Scene[s] =
+        let paths = Scene.preorderPaths(scene);
+        // 衝突対象になる静的ボディ情報を先に集める（このパス中、静的ボディは動かない）
+        let staticBodies: List[(Vec2.Vec2, CollisionShape2D)] =
+            List.filterMap(p -> match Scene.getEngineNode(p, scene) {
+                case Some(EngineNode.StaticBody2DWithState(body, _)) =>
+                    if (StaticBody2D.isPhysicsCollisionEnabled(body))
+                        match CollisionObject2D.getCollisionShape(body) {
+                            case Some(shape) =>
+                                Some((Scene.globalPositionAt(p, scene), shape))
+                            case None => None
+                        }
+                    else None
+                case _ => None
+            }, paths);
+        // 各 RigidBody2D に対して全 static body との分離を順次適用
+        List.foldLeft((sc, path) ->
+            match Scene.getEngineNode(path, sc) {
+                case Some(EngineNode.RigidBody2DWithState(body, _)) =>
+                    match CollisionObject2D.getCollisionShape(body) {
+                        case Some(shape) =>
+                            let pos = Scene.globalPositionAt(path, sc);
+                            resolveOneRigid(path, pos, shape, body, staticBodies, sc)
+                        case None => sc
+                    }
+                case _ => sc
+            },
+            scene,
+            paths)
+
+    /// 1 つの RigidBody2D に対し、全静的ボディとの MTV を順に適用する。
+    /// 各分離ごとに位置を更新し、法線方向の速度成分をゼロにする。
+    def resolveOneRigid(path: NodePath, initPos: Vec2.Vec2, shape: CollisionShape2D,
+                         initBody: RigidBody2D, statics: List[(Vec2.Vec2, CollisionShape2D)],
+                         scene: Scene[s]): Scene[s] =
+        let (finalPos, finalBody) = List.foldLeft(
+            (acc, sb) -> {
+                let (pos, body) = acc;
+                let (sPos, sShape) = sb;
+                match CollisionShape2D.resolveOverlap(pos, shape, sPos, sShape) {
+                    case None => (pos, body)
+                    case Some(mtv) =>
+                        let newPos = Vec2.add(pos, mtv);
+                        let vel = RigidBody2D.getLinearVelocity(body);
+                        let mtvLen = Vec2.length(mtv);
+                        let newVel = if (mtvLen < 0.001) vel else {
+                            let normal = Vec2.div(mtv, mtvLen);
+                            let velAlongNormal = Vec2.dot(vel, normal);
+                            // 法線と逆向きの速度成分のみ除去（重力蓄積防止）
+                            if (velAlongNormal < 0.0)
+                                Vec2.sub(vel, Vec2.mul(normal, velAlongNormal))
+                            else vel
+                        };
+                        (newPos, RigidBody2D.setLinearVelocity(newVel, body))
+                }
+            },
+            (initPos, initBody),
+            statics);
+        scene
+            |> Scene.mapEngineNode(path, en -> EngineNode.mapRigidBody2D(_ -> finalBody, en))
+            |> Scene.setGlobalPositionAt(path, finalPos)
 }

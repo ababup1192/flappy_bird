@@ -268,4 +268,88 @@ mod CollisionShape2D {
         let distSq = segmentToSegmentDistSq(segA1, segA2, segB1, segB2);
         let sumR = radiusA + radiusB;
         distSq < sumR * sumR
+
+    // ========================================================================
+    // MTV（Minimum Translation Vector）計算 — 衝突分離用
+    // ========================================================================
+    //
+    // resolveOverlap は「形状 A を形状 B から分離するために A に加算すべき変位」を返す。
+    // 重なっていない場合は None。
+    // PhysicsStep が静的衝突解決（push out）に使う。
+
+    /// 2 つの形状の重なりを解消する変位ベクトルを返す。
+    /// posA / posB は各形状の中心座標。返り値は posA に足すと A が B から離れる変位。
+    /// Capsule を含むペアは未対応（None を返す）。
+    pub def resolveOverlap(posA: Vec2.Vec2, shapeA: CollisionShape2D,
+                            posB: Vec2.Vec2, shapeB: CollisionShape2D): Option[Vec2.Vec2] =
+        match (shapeA, shapeB) {
+            case (CollisionShape2D.RectShape2D(ra), CollisionShape2D.RectShape2D(rb)) =>
+                resolveRectRect(posA, {x = ra#width, y = ra#height},
+                                posB, {x = rb#width, y = rb#height})
+            case (CollisionShape2D.CircleShape2D(ca), CollisionShape2D.CircleShape2D(cb)) =>
+                resolveCircleCircle(posA, ca#radius, posB, cb#radius)
+            case (CollisionShape2D.CircleShape2D(ca), CollisionShape2D.RectShape2D(rb)) =>
+                resolveCircleRect(posA, ca#radius, posB, {x = rb#width, y = rb#height})
+            case (CollisionShape2D.RectShape2D(ra), CollisionShape2D.CircleShape2D(cb)) =>
+                // B (circle) を A (rect) から離す変位を求めて符号反転
+                Option.map(v -> Vec2.neg(v),
+                    resolveCircleRect(posB, cb#radius, posA, {x = ra#width, y = ra#height}))
+            case _ => None  // Capsule 関連は未対応
+        }
+
+    /// AABB 矩形同士の MTV。重なる軸のうち侵入量が小さい方向に押し出す。
+    pub def resolveRectRect(posA: Vec2.Vec2, sizeA: Vec2.Vec2,
+                             posB: Vec2.Vec2, sizeB: Vec2.Vec2): Option[Vec2.Vec2] =
+        let halfA = Vec2.div(sizeA, 2.0);
+        let halfB = Vec2.div(sizeB, 2.0);
+        let dx = posA#x - posB#x;
+        let dy = posA#y - posB#y;
+        let overlapX = halfA#x + halfB#x - Float64.abs(dx);
+        let overlapY = halfA#y + halfB#y - Float64.abs(dy);
+        if (overlapX <= 0.0 or overlapY <= 0.0) None
+        else if (overlapX < overlapY)
+            Some({x = if (dx >= 0.0) overlapX else (-1.0 * overlapX), y = 0.0})
+        else
+            Some({x = 0.0, y = if (dy >= 0.0) overlapY else (-1.0 * overlapY)})
+
+    /// 円同士の MTV。中心間ベクトル方向に sumR - distance だけ押し出す。
+    pub def resolveCircleCircle(posA: Vec2.Vec2, radiusA: Float64,
+                                 posB: Vec2.Vec2, radiusB: Float64): Option[Vec2.Vec2] =
+        let diff = Vec2.sub(posA, posB);
+        let dist = Vec2.length(diff);
+        let sumR = radiusA + radiusB;
+        if (dist >= sumR) None
+        else if (dist < 0.001)
+            // 中心一致 — X 正方向に押し出す（任意）
+            Some({x = sumR, y = 0.0})
+        else
+            let push = (sumR - dist) / dist;
+            Some(Vec2.mul(diff, push))
+
+    /// 円と矩形の MTV。
+    /// circlePos / rectPos は各中心座標。circle を rect から離す変位を返す。
+    pub def resolveCircleRect(circlePos: Vec2.Vec2, radius: Float64,
+                               rectPos: Vec2.Vec2, rectSize: Vec2.Vec2): Option[Vec2.Vec2] =
+        let halfW = rectSize#x / 2.0;
+        let halfH = rectSize#y / 2.0;
+        // 矩形上の最近接点
+        let closestX = Float64.max(rectPos#x - halfW, Float64.min(circlePos#x, rectPos#x + halfW));
+        let closestY = Float64.max(rectPos#y - halfH, Float64.min(circlePos#y, rectPos#y + halfH));
+        let distX = circlePos#x - closestX;
+        let distY = circlePos#y - closestY;
+        let dist = Vec2.length({x = distX, y = distY});
+        if (dist >= radius) None
+        else if (dist < 0.001)
+            // 円中心が矩形内部 — 浅い軸方向に押し出す
+            let dx = circlePos#x - rectPos#x;
+            let dy = circlePos#y - rectPos#y;
+            let penX = halfW + radius - Float64.abs(dx);
+            let penY = halfH + radius - Float64.abs(dy);
+            if (penX < penY)
+                Some({x = if (dx >= 0.0) penX else (-1.0 * penX), y = 0.0})
+            else
+                Some({x = 0.0, y = if (dy >= 0.0) penY else (-1.0 * penY)})
+        else
+            let push = (radius - dist) / dist;
+            Some({x = distX * push, y = distY * push})
 }

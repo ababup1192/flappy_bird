@@ -497,18 +497,20 @@ def testBirdGroundCollision(): Unit \ Assert =
     let scene = withMockAudio(() -> Game.onBirdHitGround(testScene()));
     Assert.assertEq(expected = BirdState.Grounded, BirdScene.getBirdData(scene)#state)
 
-/// 鳥が地面に衝突すると地面の上にクランプされること
+/// PhysicsStep.resolveStaticCollisions が鳥を地面の上にクランプすること
 ///
-///   鳥を地面に重なる位置 (144, 470) に移動してから衝突処理
-///   → 地面上端(400) - 鳥半径(13) = 387 にクランプ
+///   鳥を地面と重なる位置 (144, 410) に移動してから物理衝突解決
+///   Ground top=400, half=56, Bird radius=13:
+///     penetration depth = bird radius - (410 - 400) = 3
+///     → 上方向に 23 押し出し → 410 - 23 = 387
+///   期待: y = groundTopY(400) - birdRadius(13) = 387
 ///
 @Test
 def testBirdClampedAboveGround(): Unit \ Assert =
-    let scene = withMockAudio(() ->
-        testScene()
-            |> BirdScene.mapBirdBody((body, birdData) ->
-                (Node2D.setPosition({x = 144.0, y = 470.0}, body), birdData))
-            |> Game.onBirdHitGround);
+    let scene = testScene()
+        |> BirdScene.mapBirdBody((body, birdData) ->
+            (Node2D.setPosition({x = 144.0, y = 410.0}, body), birdData))
+        |> PhysicsStep.resolveStaticCollisions;
     let pos = Scene.globalPosition("bird", scene);
     Assert.assertEq(expected = 387.0, pos#y)
 

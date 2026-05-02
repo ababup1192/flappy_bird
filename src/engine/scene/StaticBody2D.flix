@@ -21,7 +21,8 @@ pub enum StaticBody2D {
         collisionShape = Option[CollisionShape2D],   // 衝突形状
         monitoring = Bool,                           // 他エリアの侵入を検出するか
         monitorable = Bool,                          // 他エリアから検出されるか
-        priority = Int32                             // 衝突判定の処理優先度
+        priority = Int32,                            // 衝突判定の処理優先度
+        physicsCollisionEnabled = Bool               // RigidBody2D を物理的に押し戻すか（true=ground のような固体、false=Area2D 検出のみ）
     })
 }
 
@@ -29,6 +30,7 @@ mod StaticBody2D {
 
     /// デフォルト値で StaticBody2D を生成する。
     /// monitoring=false, monitorable=true（他の Area2D から検出される）。
+    /// physicsCollisionEnabled=true（RigidBody2D を物理的に押し戻す。Pipe など Area2D 検出のみで使う場合は false に設定）。
     pub def make(position: Vec2.Vec2, shape: CollisionShape2D): StaticBody2D =
         StaticBody2D.StaticBody2D({
             visible = true,
@@ -41,8 +43,19 @@ mod StaticBody2D {
             collisionShape = Some(shape),
             monitoring = false,
             monitorable = true,
-            priority = 0
+            priority = 0,
+            physicsCollisionEnabled = true
         })
+
+    /// 物理衝突解決の有効フラグを取得する
+    pub def isPhysicsCollisionEnabled(body: StaticBody2D): Bool =
+        let StaticBody2D.StaticBody2D(r) = body;
+        r#physicsCollisionEnabled
+
+    /// 物理衝突解決の有効フラグを設定する。false にすると RigidBody2D を押し戻さない（Area2D 検出のみ）
+    pub def setPhysicsCollisionEnabled(v: Bool, body: StaticBody2D): StaticBody2D =
+        let StaticBody2D.StaticBody2D(r) = body;
+        StaticBody2D.StaticBody2D({physicsCollisionEnabled = v | r})
 
     // ── CollisionObject2D setter ──
 

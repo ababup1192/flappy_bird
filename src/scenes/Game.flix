@@ -333,7 +333,7 @@ mod Game {
     // ========================================================================
 
     /// 鳥が地面に衝突したときの処理
-    /// 鳥を Grounded 状態にし、地面の上にクランプする
+    /// 鳥を Grounded 状態にする。地面への押し戻しは PhysicsStep.resolveStaticCollisions が自動処理。
     /// SE は BirdScene.setBirdState 側で再生される（bird.gd GroundedState._init 準拠）
     pub def onBirdHitGround(scene: Scene[NodeTag]): Scene[NodeTag] \ GameEngine.Audio =
         let birdData = BirdScene.getBirdData(scene);
@@ -341,12 +341,10 @@ mod Game {
             case BirdState.Flapping =>
                 scene
                     |> BirdScene.setBirdState(BirdState.Grounded)
-                    |> clampBirdAboveGround
                     |> triggerCameraShake(shakeIntensity(), shakeDuration())
             case BirdState.Hit =>
                 scene
                     |> BirdScene.setBirdState(BirdState.Grounded)
-                    |> clampBirdAboveGround
             case _ => scene
         }
 
@@ -381,16 +379,6 @@ mod Game {
             let pos = Node2D.getPosition(body);
             (Node2D.setPosition({x = pipeX - pipeHalfW - birdRadius, y = pos#y}, body),
              birdData))
-
-    /// 鳥の Y 座標を地面の上端にクランプする
-    def clampBirdAboveGround(scene: Scene[NodeTag]): Scene[NodeTag] =
-        let maxY = GroundScene.groundTopY() - 13.0;
-        scene |> BirdScene.mapBirdBody((body, birdData) ->
-            let pos = Node2D.getPosition(body);
-            if (pos#y > maxY)
-                (Node2D.setPosition({x = pos#x, y = maxY}, body), birdData)
-            else
-                (body, birdData))
 
     // ========================================================================
     // デルタタイム

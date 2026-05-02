@@ -82,7 +82,10 @@ mod PipeScene {
     /// texture: テクスチャ名
     def spawnPipe(name: String, x: Float64, y: Float64, texture: String,
                   scene: Scene[NodeTag]): Scene[NodeTag] =
-        let body = StaticBody2D.make({x = x, y = y}, pipeCollisionShape());
+        // physicsCollisionEnabled=false: pipe は RigidBody2D を物理的に押し戻さない。
+        // 衝突は Bird の Area2D で検出して onBirdHitPipe で処理する（bird.gd add_collision_exception_with 相当）。
+        let body = StaticBody2D.make({x = x, y = y}, pipeCollisionShape())
+            |> StaticBody2D.setPhysicsCollisionEnabled(false);
         let sprite = Sprite2D.make(texture, Vec2.zero(), {x = 2.0, y = 2.0});
         scene
             |> Scene.addNode(name,
