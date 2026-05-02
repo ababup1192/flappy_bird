@@ -227,12 +227,12 @@ mod Game {
     // ========================================================================
 
     /// ゲーム開始入力を受け付けるか判定する
-    /// GameOver layer 存在: アニメ完了後 / 不在: パイプが無いとき (= Menu)
+    /// GameOver 表示中: アニメ完了後 / それ以外: パイプが無いとき (= Menu)
     pub def canStart(scene: Scene[NodeTag]): Bool =
-        match Scene.getEngineNode(GameOverScene.layerPath(), scene) {
-            case Some(_) => GameOverScene.isAnimationFinished(scene)
-            case None    => Scene.getNodesInGroup(PipeScene.pipeGroup(), scene) |> List.isEmpty
-        }
+        if (GameOverScene.isActive(scene))
+            GameOverScene.isAnimationFinished(scene)
+        else
+            Scene.getNodesInGroup(PipeScene.pipeGroup(), scene) |> List.isEmpty
 
     // ========================================================================
     // 初期状態構築
