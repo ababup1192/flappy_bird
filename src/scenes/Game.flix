@@ -221,26 +221,6 @@ instance AreaHandler[NodeTag] {
 }
 
 // ========================================================================
-// ScreenNotifyHandler 実装
-// ========================================================================
-
-instance ScreenNotifyHandler[NodeTag] {
-    redef onScreenExited(_path: NodePath, _state: NodeTag,
-                         scene: Scene[NodeTag]): Scene[NodeTag] =
-        scene
-}
-
-// ========================================================================
-// TimerHandler 実装
-// ========================================================================
-
-instance TimerEvent.TimerHandler[NodeTag] {
-    redef onTimeout(_timerPath: NodePath, _state: NodeTag,
-                    scene: Scene[NodeTag]): Scene[NodeTag] \ Math.Random =
-        checked_ecast(scene)
-}
-
-// ========================================================================
 // mod Game
 // ========================================================================
 
@@ -462,15 +442,13 @@ mod Game {
     // エンジン更新パイプライン
     // ========================================================================
 
-    /// エンジン更新パイプライン（input → buttons → process → physics → collision → screen → timers）
+    /// エンジン更新パイプライン（input → buttons → process → physics → collision）
     def engineUpdate(dt: Float64, scene: Scene[NodeTag]): Scene[NodeTag] \ {GameEngine.Audio, GameEngine.Game, Math.Random, BirdStateChanged, StageRequested} =
         (GameEngine.emitInput
         >> GameEngine.emitButtons
         >> GameEngine.process(dt, false)
         >> GameEngine.physicsProcess(dt, false, PhysicsStep.defaultGravity())
-        >> GameEngine.emitCollision
-        >> GameEngine.emitScreenNotify(screenWidth = screenWi(), screenHeight = screenHi())
-        >> GameEngine.emitTimers)(scene)
+        >> GameEngine.emitCollision)(scene)
 
     /// ビューポートの左端 X 座標を取得する
     pub def getViewportLeftX(scene: Scene[NodeTag]): Float64 =
