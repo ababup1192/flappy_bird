@@ -44,8 +44,10 @@ pub enum NodeTag {
     case BirdArea
     /// 地面の StaticBody2D に付与
     case Ground
-    /// パイプの StaticBody2D に付与
+    /// パイプペアの親ノード（Marker2D）に付与。process で画面外自殺判定を行う
     case Pipe
+    /// パイプペアの子（Top/Bottom の StaticBody2D）に付与。AreaHandler で衝突判定に使う
+    case PipePart
     /// パイプ間の採点用 Area2D に付与
     case Coin
     /// スコアラベルに付与。現在のスコア値を保持する
