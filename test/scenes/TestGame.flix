@@ -92,15 +92,15 @@ def runFlap(scene: Scene[NodeTag]): Scene[NodeTag] =
 /// シーンには bird(+sprite+area) + camera + background(+bg_sprite)
 ///   + hud(+score_label+best_score_label)
 ///   + ground_0(+sprite) + ground_1(+sprite)
-///   + 3ペア × (2パイプ(+sprite) + coin) = 28 ノード
+///   + 3ペア × (Marker2D 親 + top(+sprite) + bottom(+sprite) + coin) = 31 ノード
 @Test
 def testBuildSceneNodeCount(): Unit \ Assert =
-    Assert.assertEq(expected = 28, Scene.nodeCount(testScene()))
+    Assert.assertEq(expected = 31, Scene.nodeCount(testScene()))
 
-/// ルートノードは 15（bird, camera, background, hud, ground_0, ground_1, pipe_0〜2 × top/bottom/coin）
+/// ルートノードは 9（bird, camera, background, hud, ground_0, ground_1, pipe_0〜2 親）
 @Test
 def testBuildSceneRootCount(): Unit \ Assert =
-    Assert.assertEq(expected = 15, Map.size(Scene.states(testScene())))
+    Assert.assertEq(expected = 9, Map.size(Scene.states(testScene())))
 
 /// 初期フェーズは Playing
 @Test
@@ -449,7 +449,7 @@ def testHandleGroundedUpdatesData(): Unit \ Assert =
 /// Hit 状態にすると angular velocity が 2.0 になること（落下回転演出）
 @Test
 def testHandleHitSetsAngularVelocity(): Unit \ Assert =
-    let pipePath = "pipe_0_top" :: Nil;
+    let pipePath = PipeScene.topPath(PipeScene.pairName(0));
     let scene = withMockAudioAndState(() ->
         testScene()
             |> BirdScene.handleHit(pipePath));
@@ -584,34 +584,38 @@ def testBackgroundHasSprite(): Unit \ Assert =
 // Phase 4: パイプの構造
 // ========================================================================
 
-/// パイプグループに 9 ノード（3 ペア × (上下 + coin)）があること
+/// パイプグループには 3 ペア（親 Marker2D ノード）がある
 @Test
 def testPipeGroupCount(): Unit \ Assert =
     let paths = Scene.getNodesInGroup(PipeScene.pipeGroup(), testScene());
-    Assert.assertEq(expected = 9, List.length(paths))
+    Assert.assertEq(expected = 3, List.length(paths))
 
-/// パイプノードが StaticBody2D であること
+/// パイプの Top 子ノードが StaticBody2D + PipePart タグであること
 @Test
 def testPipeIsStaticBody(): Unit \ Assert =
-    match Scene.getEngineNode("pipe_0_bottom" :: Nil, testScene()) {
-        case Some(EngineNode.StaticBody2DWithState(_, NodeTag.Pipe)) =>
+    let pair0 = PipeScene.pairName(0);
+    match Scene.getEngineNode(PipeScene.bottomPath(pair0), testScene()) {
+        case Some(EngineNode.StaticBody2DWithState(_, NodeTag.PipePart)) =>
             Assert.assertTrue(true)
-        case _ => bug!("Expected StaticBody2DWithState with Pipe tag")
+        case _ => bug!("Expected StaticBody2DWithState with PipePart tag")
     }
 
 /// パイプの StaticBody2D が monitorable=true であること（鳥の Area2D から検知される）
 @Test
 def testPipeMonitorable(): Unit \ Assert =
-    match Scene.getEngineNode("pipe_0_bottom" :: Nil, testScene()) {
+    let pair0 = PipeScene.pairName(0);
+    match Scene.getEngineNode(PipeScene.bottomPath(pair0), testScene()) {
         case Some(EngineNode.StaticBody2DWithState(body, _)) =>
             Assert.assertTrue(CollisionObject2D.isMonitorable(body))
         case _ => bug!("pipe not found")
     }
 
-/// パイプにスプライト子ノードがあること
+/// パイプにスプライト孫ノードがあること
 @Test
 def testPipeHasSpriteChild(): Unit \ Assert =
-    match Scene.getState("pipe_0_bottom" :: "sprite" :: Nil, testScene()) {
+    let pair0 = PipeScene.pairName(0);
+    let path = List.append(PipeScene.bottomPath(pair0), PipeScene.spriteName() :: Nil);
+    match Scene.getState(path, testScene()) {
         case Some(NodeTag.NoTag) => Assert.assertTrue(true)
         case _ => bug!("Expected NoTag child for pipe sprite")
     }
@@ -620,7 +624,7 @@ def testPipeHasSpriteChild(): Unit \ Assert =
 // Phase 4: パイプの配置（mock random=0.5 → gapY=200.0）
 // ========================================================================
 
-/// 最初のボトムパイプの位置（X=576, Y=200+250=450）
+/// 最初のボトムパイプのグローバル位置（X=576, Y=200+250=450）
 ///
 ///   gapY = 110 + (290-110) × 0.5 = 200.0
 ///   score=0 → easySpriteOffset=250
@@ -628,39 +632,39 @@ def testPipeHasSpriteChild(): Unit \ Assert =
 ///
 @Test
 def testPipe0BottomPosition(): Unit \ Assert =
-    let pos = Scene.globalPosition("pipe_0_bottom", testScene());
+    let pos = Scene.globalPositionAt(PipeScene.bottomPath(PipeScene.pairName(0)), testScene());
     Assert.assertEq(expected = (576.0, 450.0), vecToTuple(pos))
 
-/// 最初のトップパイプの位置（X=576, Y=200-250=-50）
+/// 最初のトップパイプのグローバル位置（X=576, Y=200-250=-50）
 ///
 ///   score=0 → easySpriteOffset=250
 ///   topY = 200 - 250 = -50.0
 ///
 @Test
 def testPipe0TopPosition(): Unit \ Assert =
-    let pos = Scene.globalPosition("pipe_0_top", testScene());
+    let pos = Scene.globalPositionAt(PipeScene.topPath(PipeScene.pairName(0)), testScene());
     Assert.assertEq(expected = (576.0, -50.0), vecToTuple(pos))
 
 /// 2 番目のパイプペアの位置（X=576+182=758、score=0 の初心者向けギャップ）
 @Test
 def testPipe1Position(): Unit \ Assert =
-    let pos = Scene.globalPosition("pipe_1_bottom", testScene());
+    let pos = Scene.globalPositionAt(PipeScene.bottomPath(PipeScene.pairName(1)), testScene());
     Assert.assertEq(expected = (758.0, 450.0), vecToTuple(pos))
 
 /// 3 番目のパイプペアの位置（X=576+364=940、score=0 の初心者向けギャップ）
 @Test
 def testPipe2Position(): Unit \ Assert =
-    let pos = Scene.globalPosition("pipe_2_bottom", testScene());
+    let pos = Scene.globalPositionAt(PipeScene.bottomPath(PipeScene.pairName(2)), testScene());
     Assert.assertEq(expected = (940.0, 450.0), vecToTuple(pos))
 
 // ========================================================================
 // Phase 4: パイプ初期配置
 // ========================================================================
 
-/// 初期パイプノード数は 9（3 ペア × top/bottom/coin = 9 ノード）
+/// 初期パイプペア数は 3（親 Marker2D が pipeGroup に登録される）
 @Test
 def testBuildStatePipeCount(): Unit \ Assert =
-    Assert.assertEq(expected = 9,
+    Assert.assertEq(expected = 3,
         List.length(Scene.getNodesInGroup(PipeScene.pipeGroup(), testScene())))
 
 // ========================================================================
@@ -675,8 +679,9 @@ def testBuildStatePipeCount(): Unit \ Assert =
 def testSpawnPipePairAt(): Unit \ Assert =
     let scene = Scene.empty()
         |> PipeScene.spawnPipePairAt(0, 400.0, 200.0);
-    let topPos = Scene.globalPosition("pipe_0_top", scene);
-    let bottomPos = Scene.globalPosition("pipe_0_bottom", scene);
+    let pair0 = PipeScene.pairName(0);
+    let topPos = Scene.globalPositionAt(PipeScene.topPath(pair0), scene);
+    let bottomPos = Scene.globalPositionAt(PipeScene.bottomPath(pair0), scene);
     Assert.assertEq(expected = ((400.0, -2.0), (400.0, 402.0)),
         (vecToTuple(topPos), vecToTuple(bottomPos)))
 
@@ -687,7 +692,7 @@ def testSpawnPipePairAt(): Unit \ Assert =
 /// Flapping 状態で鳥がパイプに衝突すると Hit になること
 @Test
 def testBirdPipeCollisionFlappingToHit(): Unit \ Assert =
-    let pipePath = "pipe_0_top" :: Nil;
+    let pipePath = PipeScene.topPath(PipeScene.pairName(0));
     let scene = withMockAudioAndState(() -> Game.onBirdHitPipe(pipePath = pipePath, testScene()));
     Assert.assertEq(expected = BirdState.Hit, BirdScene.getBirdData(scene)#state)
 
@@ -695,7 +700,7 @@ def testBirdPipeCollisionFlappingToHit(): Unit \ Assert =
 /// （bird.gd HitState._init `add_collision_exception_with(other_body)` 相当）
 @Test
 def testBirdPipeCollisionRegistersException(): Unit \ Assert =
-    let pipePath = "pipe_0_top" :: Nil;
+    let pipePath = PipeScene.topPath(PipeScene.pairName(0));
     let scene = withMockAudioAndState(() -> Game.onBirdHitPipe(pipePath = pipePath, testScene()));
     match Scene.getEngineNode("bird" :: Nil, scene) {
         case Some(EngineNode.RigidBody2DWithState(body, _)) =>
@@ -706,7 +711,7 @@ def testBirdPipeCollisionRegistersException(): Unit \ Assert =
 /// Hit 状態で再度パイプ衝突しても変化しないこと
 @Test
 def testBirdPipeCollisionHitNoChange(): Unit \ Assert =
-    let pipePath = "pipe_0_top" :: Nil;
+    let pipePath = PipeScene.topPath(PipeScene.pairName(0));
     let scene = withMockAudioAndState(() ->
         testScene()
             |> BirdScene.handleHit(pipePath)
@@ -716,7 +721,7 @@ def testBirdPipeCollisionHitNoChange(): Unit \ Assert =
 /// Grounded 状態でパイプ衝突しても変化しないこと
 @Test
 def testBirdPipeCollisionGroundedNoChange(): Unit \ Assert =
-    let pipePath = "pipe_0_top" :: Nil;
+    let pipePath = PipeScene.topPath(PipeScene.pairName(0));
     let scene = withMockAudioAndState(() ->
         testScene()
             |> BirdScene.handleGrounded
@@ -727,42 +732,42 @@ def testBirdPipeCollisionGroundedNoChange(): Unit \ Assert =
 // Phase 4: パイプリサイクル（NodeRemovedHandler 経由）
 // ========================================================================
 
-/// パイプペアが画面外になると process でリサイクルされる
-/// 自殺判定の主体は NodeTag.Pipe（Top/Bottom）
+/// パイプペアが画面外になると process で親ごとリサイクルされる
+/// 自殺主体は親 Marker2D（NodeTag.Pipe）。サブツリー削除で top/bottom/coin がまとめて消える
 @Test
 def testPipeRecyclesWhenOffScreen(): Unit \ Assert =
+    let pair0 = PipeScene.pairName(0);
     let result = withMockRandom(() -> {
         let initial = testScene();
         // bird を pipe_0(x=576) より遠く（x=2000）に移動 → camera 追従後 viewportLeftX=1928
-        // pipe_0 の右端は 576+26=602 で画面外
         let movedBird = Scene.setGlobalPositionAt("bird" :: Nil,
             {x = 2000.0, y = 200.0}, initial);
         Scene.processAll(0.016, false, movedBird)
     });
-    let pipePaths = Scene.getNodesInGroup(PipeScene.pipeGroup(), result);
-    let pipe0Removed = Option.isEmpty(Scene.getEngineNode("pipe_0_top" :: Nil, result));
-    // pipe_0 は削除され、新 pair が spawn されているのでパイプノード数は 9 維持
-    Assert.assertEq(expected = (9, true), (List.length(pipePaths), pipe0Removed))
+    let pairCount = List.length(Scene.getNodesInGroup(PipeScene.pipeGroup(), result));
+    let pair0Removed = Option.isEmpty(Scene.getEngineNode(pair0 :: Nil, result));
+    // pipe_0 は削除され、新 pair が spawn されているのでペア数 3 維持
+    Assert.assertEq(expected = (3, true), (pairCount, pair0Removed))
 
 /// コインを通過した（NodeTag.NoTag になった）後でも、pipe ペアが
 /// 画面外になればリサイクルされる
-/// 再発防止: 自殺判定を Coin に置くと NoTag 化により発動しなくなるため、Pipe を主体とする
+/// 再発防止: 自殺判定を Coin に置くと NoTag 化により発動しなくなるため、親 Pipe を主体とする
 @Test
 def testPipeRecyclesAfterCoinPassed(): Unit \ Assert =
+    let pair0 = PipeScene.pairName(0);
     let result = withMockRandom(() -> {
         let initial = testScene();
         // pipe_0 のコインを通過済み（NoTag）にする
-        let coinPath = "pipe_0_coin" :: Nil;
-        let afterPass = Scene.setState(coinPath, NodeTag.NoTag, initial);
+        let afterPass = Scene.setState(PipeScene.coinPath(pair0), NodeTag.NoTag, initial);
         // bird を pipe_0 より遠くに移動 → pipe_0 が画面外
         let movedBird = Scene.setGlobalPositionAt("bird" :: Nil,
             {x = 2000.0, y = 200.0}, afterPass);
         Scene.processAll(0.016, false, movedBird)
     });
-    let pipePaths = Scene.getNodesInGroup(PipeScene.pipeGroup(), result);
-    let pipe0Removed = Option.isEmpty(Scene.getEngineNode("pipe_0_top" :: Nil, result));
+    let pairCount = List.length(Scene.getNodesInGroup(PipeScene.pipeGroup(), result));
+    let pair0Removed = Option.isEmpty(Scene.getEngineNode(pair0 :: Nil, result));
     // コイン NoTag 化に影響されず pipe_0 は削除され、新 pair が spawn されている
-    Assert.assertEq(expected = (9, true), (List.length(pipePaths), pipe0Removed))
+    Assert.assertEq(expected = (3, true), (pairCount, pair0Removed))
 
 // ========================================================================
 // Phase 6: GameOverScene — メダル判定
@@ -850,10 +855,10 @@ def testGameOverHidesHudScore(): Unit \ Assert =
         case _ => bug!("score_label not found")
     }
 
-/// buildState のノード数は GameOver UI 追加前と同じ（28）
+/// buildState のノード数は GameOver UI 追加前と同じ（31）
 @Test
 def testBuildStateNodeCountUnchanged(): Unit \ Assert =
-    Assert.assertEq(expected = 28, Scene.nodeCount(testScene()))
+    Assert.assertEq(expected = 31, Scene.nodeCount(testScene()))
 
 // ========================================================================
 // Phase 7: MenuScene — メニュー画面

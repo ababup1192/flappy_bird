@@ -132,20 +132,13 @@ instance Node[NodeTag] {
                     checked_ecast((node, Scene.removeAtAndNotify(path, scene)))
                 else
                     (node, scene)
-            case EngineNode.StaticBody2DWithState(_, NodeTag.Pipe) =>
+            case EngineNode.Marker2DWithState(_, NodeTag.Pipe) =>
+                // 親ノード自身を removeAt するとサブツリー全削除（top/bottom/coin も同時に消える）
                 let pos = Scene.globalPositionAt(path, scene);
-                if (pos#x + PipeScene.pipeHalfWidth() < Game.getViewportLeftX(scene)) {
-                    // 同 X のパイプペア（Top + Bottom + Coin/NoTag）を全削除
-                    // 自分は最後に removeAtAndNotify で再生成を発火（Top/Bottom どちらが先でも OK）
-                    let pipeX = pos#x;
-                    let pairPaths = Scene.getNodesInGroup(PipeScene.pipeGroup(), scene)
-                        |> List.filter(p -> Scene.globalPositionAt(p, scene)#x == pipeX);
-                    let cleanedScene = List.foldLeft((sc, p) ->
-                        if (p == path) sc
-                        else Scene.removeAt(p, sc)
-                    , scene, pairPaths);
-                    checked_ecast((node, Scene.removeAtAndNotify(path, cleanedScene)))
-                } else (node, scene)
+                if (pos#x + PipeScene.pipeHalfWidth() < Game.getViewportLeftX(scene))
+                    checked_ecast((node, Scene.removeAtAndNotify(path, scene)))
+                else
+                    (node, scene)
             case _ => checked_ecast((node, scene))
         }
 
@@ -210,9 +203,9 @@ instance AreaHandler[NodeTag] {
                 Game.onBirdHitGround(scene)
             case (NodeTag.Ground, NodeTag.BirdArea) =>
                 Game.onBirdHitGround(scene)
-            case (NodeTag.BirdArea, NodeTag.Pipe) =>
+            case (NodeTag.BirdArea, NodeTag.PipePart) =>
                 Game.onBirdHitPipe(pipePath = otherPath, scene)
-            case (NodeTag.Pipe, NodeTag.BirdArea) =>
+            case (NodeTag.PipePart, NodeTag.BirdArea) =>
                 Game.onBirdHitPipe(pipePath = selfPath, scene)
             case (NodeTag.BirdArea, NodeTag.Coin) =>
                 Game.onBirdPassedCoin(coinPath = otherPath, scene)

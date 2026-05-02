@@ -17,6 +17,37 @@ mod PipeScene {
     /// パイプグループ名（一括操作用）
     pub def pipeGroup(): String = "pipes"
 
+    // ========================================================================
+    // ノード名定数（ペア親 / 子ノード）
+    // ========================================================================
+
+    /// パイプペア親の名前接頭辞（"pipe_${counter}"）
+    pub def pairNamePrefix(): String = "pipe"
+
+    /// counter からペア親ノード名を作る
+    pub def pairName(counter: Int32): String = "${pairNamePrefix()}_${counter}"
+
+    /// 上パイプの子ノード名
+    pub def topName(): String = "top"
+
+    /// 下パイプの子ノード名
+    pub def bottomName(): String = "bottom"
+
+    /// コインの子ノード名
+    pub def coinName(): String = "coin"
+
+    /// スプライトの孫ノード名
+    pub def spriteName(): String = "sprite"
+
+    /// ペアの上パイプ path
+    pub def topPath(pair: String): NodePath = pair :: topName() :: Nil
+
+    /// ペアの下パイプ path
+    pub def bottomPath(pair: String): NodePath = pair :: bottomName() :: Nil
+
+    /// ペアのコイン path
+    pub def coinPath(pair: String): NodePath = pair :: coinName() :: Nil
+
     /// ギャップ中心 Y 座標の最小値
     def gapYMin(): Float64 = 110.0
 
@@ -75,82 +106,62 @@ mod PipeScene {
     // シーン構築
     // ========================================================================
 
-    /// パイプ 1 本をシーンに追加する
-    /// name: ノード名（ユニーク）
-    /// x: パイプ中心の X 座標
-    /// y: パイプ中心の Y 座標
-    /// texture: テクスチャ名
-    def spawnPipe(name: String, x: Float64, y: Float64, texture: String,
-                  scene: Scene[NodeTag]): Scene[NodeTag] =
-        // 物理衝突はデフォルト有効。Hit 状態遷移時に bird 側で動的に
-        // collisionException を登録することで衝突解決を skip する
-        // （bird.gd HitState._init の `add_collision_exception_with(other_body)` 移植）。
-        let body = StaticBody2D.make({x = x, y = y}, pipeCollisionShape());
-        let sprite = Sprite2D.make(texture, Vec2.zero(), {x = 2.0, y = 2.0});
-        scene
-            |> Scene.addNode(name,
-                EngineNode.StaticBody2DWithState(body, NodeTag.Pipe))
-            |> Scene.addToGroup(name :: Nil, pipeGroup())
-            |> Scene.addChild(name, "sprite",
-                EngineNode.Sprite2DWithState(sprite, NodeTag.NoTag))
-
-    /// コイン（採点用 Area2D）をギャップ中央に追加する
-    /// ギャップ全体をカバーする薄い矩形センサーで、確実に通過を検知する
-    /// monitoring = false: コイン自身は重なりを検知しない（検知される側のみ）
-    def spawnCoin(counter: Int32, x: Float64, gapY: Float64, gapHeight: Float64,
-                  scene: Scene[NodeTag]): Scene[NodeTag] =
-        let coinName = "pipe_${counter}_coin";
+    /// パイプペア（top + bottom + coin）を 1 つの Marker2D 親ノード配下に追加する
+    /// godot の pipe.tscn 構造に対応。親ごと自殺で 3 ノード一括削除できる。
+    /// pair: 親ノード名（"pipe_${counter}"）
+    /// x: ペアの X 座標（親 Marker2D の position）
+    /// gapY: ギャップ中心の Y 座標
+    /// offset: ギャップ中心からパイプ中心までの距離（難易度依存）
+    def spawnPipePairWithOffset(pair: String, x: Float64, gapY: Float64,
+                                 offset: Float64, scene: Scene[NodeTag]): Scene[NodeTag] =
+        let parent = Marker2D.make({x = x, y = 0.0});
+        let topBody = StaticBody2D.make({x = 0.0, y = gapY - offset}, pipeCollisionShape());
+        let topSprite = Sprite2D.make(topTexture(), Vec2.zero(), {x = 2.0, y = 2.0});
+        let bottomBody = StaticBody2D.make({x = 0.0, y = gapY + offset}, pipeCollisionShape());
+        let bottomSprite = Sprite2D.make(bottomTexture(), Vec2.zero(), {x = 2.0, y = 2.0});
+        let gapHeight = 2.0 * (offset - pipeHalfHeight());
         let coinShape = CollisionShape2D.RectShape2D({width = 4.0, height = gapHeight});
-        let area = Area2D.make({x = x, y = gapY}, coinShape)
+        let coin = Area2D.make({x = 0.0, y = gapY}, coinShape)
             |> Area2D.setMonitoring(false);
         scene
-            |> Scene.addNode(coinName,
-                EngineNode.Area2DWithState(area, NodeTag.Coin))
-            |> Scene.addToGroup(coinName :: Nil, pipeGroup())
+            |> Scene.addNode(pair, EngineNode.Marker2DWithState(parent, NodeTag.Pipe))
+            |> Scene.addToGroup(pair :: Nil, pipeGroup())
+            |> Scene.addChild(pair, topName(),
+                EngineNode.StaticBody2DWithState(topBody, NodeTag.PipePart))
+            |> Scene.addChildAt(topPath(pair), spriteName(),
+                EngineNode.Sprite2DWithState(topSprite, NodeTag.NoTag))
+            |> Scene.addChild(pair, bottomName(),
+                EngineNode.StaticBody2DWithState(bottomBody, NodeTag.PipePart))
+            |> Scene.addChildAt(bottomPath(pair), spriteName(),
+                EngineNode.Sprite2DWithState(bottomSprite, NodeTag.NoTag))
+            |> Scene.addChild(pair, coinName(),
+                EngineNode.Area2DWithState(coin, NodeTag.Coin))
 
     /// パイプペアを指定位置に決定的に追加する（テスト用公開）
     /// 通常難易度のオフセット（normalSpriteOffset）を使用する
-    /// counter: ペア番号（ユニーク名生成用）
-    /// x: ペアの X 座標
-    /// gapY: ギャップ中心の Y 座標
     pub def spawnPipePairAt(counter: Int32, x: Float64, gapY: Float64,
                             scene: Scene[NodeTag]): Scene[NodeTag] =
-        let gapHeight = 2.0 * (normalSpriteOffset() - pipeHalfHeight());
-        scene
-            |> spawnPipe("pipe_${counter}_top", x, gapY - normalSpriteOffset(), topTexture())
-            |> spawnPipe("pipe_${counter}_bottom", x, gapY + normalSpriteOffset(), bottomTexture())
-            |> spawnCoin(counter, x, gapY, gapHeight)
+        spawnPipePairWithOffset(pairName(counter), x, gapY, normalSpriteOffset(), scene)
 
     /// パイプペアをランダムな gapY で追加する
     /// スコアに応じた縦ギャップで配置する
-    /// counter: ペア番号
-    /// x: ペアの X 座標
-    /// score: 現在のスコア（ギャップ幅の決定に使用）
     def spawnPipePair(counter: Int32, x: Float64, score: Int32,
                       scene: Scene[NodeTag]): Scene[NodeTag] \ Math.Random =
         let gapY = gapYMin() + (gapYMax() - gapYMin()) * Math.Random.randomFloat64();
-        let offset = gapSpriteOffset(score);
-        let gapHeight = 2.0 * (offset - pipeHalfHeight());
-        scene
-            |> spawnPipe("pipe_${counter}_top", x, gapY - offset, topTexture())
-            |> spawnPipe("pipe_${counter}_bottom", x, gapY + offset, bottomTexture())
-            |> spawnCoin(counter, x, gapY, gapHeight)
+        spawnPipePairWithOffset(pairName(counter), x, gapY, gapSpriteOffset(score), scene)
 
     /// 初期パイプ（3 ペア）を配置する
     /// score=0 の初心者向けギャップで配置する
     /// 画面外になったペアの再スポーンは NodeRemovedHandler が担う
     pub def addPipes(scene: Scene[NodeTag]): Scene[NodeTag] \ Math.Random =
         let spacing = pipeSpacingX();
-        List.range(0, initialPipeCount())
+        let (addPipesScene, _, _) = List.range(0, initialPipeCount())
             |> List.foldLeft((acc, _i) ->
                 let (accScene, counter, nextX) = acc;
                 let newScene = spawnPipePair(counter, nextX, 0, accScene);
                 (newScene, counter + 1, nextX + spacing)
-            , (scene, 0, firstPipeX()))
-            |> fst3
-
-    /// 3 要素タプルから先頭を取り出す
-    def fst3(t: (a, b, c)): a = let (x, _, _) = t; x
+            , (scene, 0, firstPipeX()));
+        addPipesScene
 
     /// パイプグループ内の最右端 X 座標を返す（リサイクル位置決定に使用）
     pub def maxPipeX(scene: Scene[NodeTag]): Float64 =
