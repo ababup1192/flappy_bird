@@ -354,17 +354,27 @@ mod Editor {
         {x = Float64.round(v#x), y = Float64.round(v#y)}
 
     /// ドロップ: 現在のシーン上のノード位置を JSON に書き戻し、ドラッグ状態を解除する。
-    /// 書き戻し対象は「ローカル位置」（JSON が pos として持つのはローカル座標のため）
+    /// 書き戻し対象は「ローカル位置」（JSON が pos として持つのはローカル座標のため）。
+    /// ただし押下→そのまま離した（クリック選択のみ）場合は位置が変わっていないので
+    /// ファイル書き込みをスキップする（mtime 更新で HotReload を無駄打ちさせない）
     def saveDraggedPos(stateData: EditorStateData,
                        scene: Scene[NodeTag]): (EditorStateData, Scene[NodeTag]) \
                        {Fs.FileRead, Fs.FileWrite} =
         match stateData#selected {
             case Some((jsonPath, nodePath)) =>
-                let localPos = match Scene.getEngineNode(nodePath, scene) {
-                    case Some(engineNode) => Node2D.getPosition(engineNode)
-                    case None => Vec2.zero()
+                let currentGlobal = Scene.globalPositionAt(nodePath, scene);
+                let moved = match stateData#nodeOrigin {
+                    case Some(origin) =>
+                        currentGlobal#x != origin#x or currentGlobal#y != origin#y
+                    case None => false
                 };
-                SceneSerializer.updatePos(jsonPath, nodePath, localPos);
+                if (moved) {
+                    let localPos = match Scene.getEngineNode(nodePath, scene) {
+                        case Some(engineNode) => Node2D.getPosition(engineNode)
+                        case None => Vec2.zero()
+                    };
+                    SceneSerializer.updatePos(jsonPath, nodePath, localPos)
+                } else ();
                 let cleared = {
                     dragOrigin = None,
                     nodeOrigin = None
