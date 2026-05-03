@@ -77,8 +77,11 @@ mod BirdScene {
     // ========================================================================
     // 定数 — 物理パラメータ（2x スケール）
     // ========================================================================
+    // gravityScale / linearVelocity は Node 本来の物理プロパティのため
+    // BirdScene.scene.json で管理する。BirdState / BirdData.speed はゲーム
+    // ロジックのメタデータのため Flix 側で管理する。
 
-    /// 横方向の移動速度（px/秒）。参考実装の 50 を 2 倍した値
+    /// 横方向の移動速度（px/秒）。BirdData.speed の初期値として使う
     def birdSpeed(): Float64 = 100.0
 
     /// フラップ時の上方向初速度（px/秒）。参考実装の -150 を 2 倍した値
@@ -100,12 +103,6 @@ mod BirdScene {
     /// 本家 Flappy Bird 準拠: 上端で鳥が張り付き、上向き速度はゼロにする
     def ceilingY(): Float64 = 0.0
 
-    /// 重力倍率
-    /// 参考実装: Godot 3.x デフォルト重力 98 × gravity_scale 5.0 = 490 px/s²
-    /// 2x スケール: 490 × 2 = 980 px/s²
-    /// エンジン重力 980 × gravity_scale 1.0 = 980 px/s²
-    def birdGravityScale(): Float64 = 1.0
-
     // ========================================================================
     // シーン定義 JSON のパス
     // ========================================================================
@@ -118,23 +115,20 @@ mod BirdScene {
     // ========================================================================
 
     /// 鳥のノードをシーンに追加する（プレイ用）。
-    /// 構造は BirdScene.scene.json から読み込み、Bird(BirdData)タグと
-    /// gravityScale / linearVelocity を post-load で適用する
+    /// 構造・gravityScale・linearVelocity は BirdScene.scene.json から読み込み、
+    /// Bird(BirdData) タグ（ゲーム状態）は Flix 側で付与する
     pub def addBird(scene: Scene[NodeTag]): Scene[NodeTag] \ Fs.FileRead =
         let birdData: BirdData = {state = BirdState.Flapping, speed = birdSpeed(), hitPipe = None};
         SceneLoader.loadScene(sceneJsonPath(), scene)
             |> Scene.setState(birdPath(), NodeTag.Bird(birdData))
-            |> Scene.mapEngineNode(birdPath(),
-                EngineNode.mapRigidBody2D(body -> body
-                    |> RigidBody2D.setGravityScale(birdGravityScale())
-                    |> RigidBody2D.setLinearVelocity({x = birdSpeed(), y = 0.0})))
 
     /// メニュー画面用の鳥をシーンに追加する。
-    /// Flying 状態・重力なし・速度ゼロで配置（毎フレーム update は no-op）
+    /// JSON で読み込んだ後、Flying 状態・重力ゼロ・速度ゼロで上書きする
+    /// （毎フレーム update は no-op）
     pub def addBirdForMenu(scene: Scene[NodeTag]): Scene[NodeTag] \ Fs.FileRead =
-        let birdData: BirdData = {state = BirdState.Flying, speed = 0.0, hitPipe = None};
-        SceneLoader.loadScene(sceneJsonPath(), scene)
-            |> Scene.setState(birdPath(), NodeTag.Bird(birdData))
+        let menuData: BirdData = {state = BirdState.Flying, speed = 0.0, hitPipe = None};
+        addBird(scene)
+            |> Scene.setState(birdPath(), NodeTag.Bird(menuData))
             |> Scene.mapEngineNode(birdPath(),
                 EngineNode.mapRigidBody2D(body -> body
                     |> RigidBody2D.setGravityScale(0.0)
