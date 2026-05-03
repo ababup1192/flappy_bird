@@ -85,6 +85,34 @@ mod TestEditableNode {
     def testCollectAllSpriteWithScaleRunner(): Unit \ Assert =
         withMockTextureSize(10.0, 10.0, () -> testCollectAllSpriteWithScale())
 
+    /// AnimatedSprite2D も編集対象として拾われる。
+    /// 矩形サイズは現フレームのテクスチャ × scale
+    def testCollectAllAnimatedSprite(): Unit \ {Assert, GameEngine.Game} =
+        let anim = AnimatedSprite2D.make(
+            Map#{"flap" => "frame_a" :: "frame_b" :: Nil},
+            {initialAnimation = "flap"},
+            {fps = 10.0},
+            {x = 0.0, y = 0.0},
+            {x = 2.0, y = 2.0});
+        let s: Scene[NodeTag] = Scene.empty();
+        let scene = s |> Scene.addNode("bird",
+            EngineNode.AnimSprite2DWithState(anim, NodeTag.NoTag));
+        let entries = EditableNode.collectAll(
+            {rootJsonIndex = Map#{"bird" => "Bird.scene.json"}, scene = scene});
+        // 16x16 texture × scale 2 = 32x32, centered=true → topLeft (-16, -16)
+        Assert.assertEq(
+            expected = (1, "bird" :: Nil, 32.0, 32.0, -16.0, -16.0),
+            (List.length(entries),
+             List.head(entries) |> Option.map(e -> e#nodePath) |> Option.getWithDefault(Nil),
+             List.head(entries) |> Option.map(e -> e#width)         |> Option.getWithDefault(0.0),
+             List.head(entries) |> Option.map(e -> e#height)        |> Option.getWithDefault(0.0),
+             List.head(entries) |> Option.map(e -> e#topLeftOffset#x) |> Option.getWithDefault(0.0),
+             List.head(entries) |> Option.map(e -> e#topLeftOffset#y) |> Option.getWithDefault(0.0)))
+
+    @Test
+    def testCollectAllAnimatedSpriteRunner(): Unit \ Assert =
+        withMockTextureSize(16.0, 16.0, () -> testCollectAllAnimatedSprite())
+
     /// CanvasLayer / ColorRect など編集対象外ノードは entries に含まれない。
     /// Sprite2D / TextureButton / Label2D だけが拾われる
     def testCollectAllFiltersNonEditable(): Unit \ {Assert, GameEngine.Game} =

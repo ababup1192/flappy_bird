@@ -1,6 +1,6 @@
 // EditableNode — エディタが編集対象として扱うノードの抽出と矩形計算
 //
-// シーンを走査し Sprite2D / TextureButton / Label2D を編集対象として認識する。
+// シーンを走査し Sprite2D / AnimatedSprite2D / TextureButton / Label2D を編集対象として認識する。
 // 各ノードの「画面上の表示矩形」（width / height と topLeftOffset）を計算して返すのが主な仕事。
 //
 // rootJsonIndex (root 名 → scene.json パス) に登録されていないルートに属する
@@ -76,7 +76,7 @@ mod EditableNode {
         else {x = 0.0, y = 0.0};
         {size = {x = width, y = height}, topLeftOffset = topLeftOffset}
 
-    /// 1 パス分の EditableEntry を構築する。Sprite2D / TextureButton / Label2D 以外は None。
+    /// 1 パス分の EditableEntry を構築する。Sprite2D / AnimatedSprite2D / TextureButton / Label2D 以外は None。
     /// rootJsonIndex に未登録のルートに属するノードも None。
     /// forM で「root 名取得 → JSON パス引き → ノード取得 → 矩形計算」の連鎖を平坦に書く
     def buildEntry(ctx: LookupCtx, path: NodePath):
@@ -95,11 +95,12 @@ mod EditableNode {
         }
 
     /// ノードの表示サイズと topLeftOffset を返す（編集対象でなければ None）。
-    /// Sprite2D は texture 情報が登録されていなければ None
+    /// Sprite2D / AnimatedSprite2D は texture 情報が未登録なら None
     def rectInfoOf(engineNode: EngineNode[NodeTag]):
             Option[{size = Vec2.Vec2, topLeftOffset = Vec2.Vec2}] \ GameEngine.Game =
         match engineNode {
             case EngineNode.Sprite2DWithState(sprite, _) => spriteRectInfo(sprite)
+            case EngineNode.AnimSprite2DWithState(sprite, _) => animatedSpriteRectInfo(sprite)
             case EngineNode.TextureButtonWithState(btn, _) => Some(buttonRectInfo(btn))
             case EngineNode.Label2DWithState(label, _) => Some(labelRectInfo(label))
             case _ => None
@@ -110,6 +111,21 @@ mod EditableNode {
             Option[{size = Vec2.Vec2, topLeftOffset = Vec2.Vec2}] \ GameEngine.Game =
         let Sprite2D.Sprite2D(record) = sprite;
         GameEngine.Game.getTextureInfo(record#texture)
+            |> Option.map(info -> {
+                let size = {x = info#width * record#scale#x,
+                            y = info#height * record#scale#y};
+                {size = size,
+                 topLeftOffset = boxTopLeftOffset(record#centered, size)}
+            })
+
+    /// AnimatedSprite2D の矩形情報。現フレームのテクスチャサイズ × scale で計算する。
+    /// 鳥のように羽ばたきフレームごとにサイズが微妙に違うことがあるが、
+    /// エディタの選択枠としては「今描いてるフレーム」と一致するのが直感的
+    def animatedSpriteRectInfo(sprite: AnimatedSprite2D):
+            Option[{size = Vec2.Vec2, topLeftOffset = Vec2.Vec2}] \ GameEngine.Game =
+        let AnimatedSprite2D.AnimatedSprite2D(record) = sprite;
+        let texture = AnimatedSprite2D.currentTexture(sprite);
+        GameEngine.Game.getTextureInfo(texture)
             |> Option.map(info -> {
                 let size = {x = info#width * record#scale#x,
                             y = info#height * record#scale#y};

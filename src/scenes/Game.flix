@@ -357,8 +357,9 @@ mod Game {
             let sceneAfterEditor = Editor.handleInput(scene);
             let updatedScene = if (Editor.isOn()) sceneAfterEditor
                                else sceneAfterEditor
-                                   |> GameEngine.process(dt, false)
-                                   |> GameEngine.physicsProcess(dt, false, PhysicsStep.defaultGravity())
+                                   |> GameEngine.process(delta = dt, paused = false)
+                                   |> GameEngine.physicsProcess(delta = dt, paused = false,
+                                                                gravity = PhysicsStep.defaultGravity())
                                    |> GameEngine.handleInput
                                    |> GameEngine.handleButtons
                                    |> GameEngine.handleCollisions;

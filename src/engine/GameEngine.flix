@@ -125,22 +125,24 @@ mod GameEngine {
     // ========================================================================
     //
     //   let updateScene =
-    //       GameEngine.process(dt, false)
-    //       >> GameEngine.physics(dt, false, gravity)
-    //       >> GameEngine.collisions
-    //       >> GameEngine.offscreen(screenWidth = 480, screenHeight = 720);
+    //       GameEngine.process(delta = dt, paused = false)
+    //       >> GameEngine.physicsProcess(delta = dt, paused = false, gravity = gravity)
+    //       >> GameEngine.handleCollisions
+    //       >> GameEngine.handleScreenTransitions(screenWidth = 480, screenHeight = 720);
     //   GameEngine.render(updateScene(scene));
 
     /// 全ノードの毎フレーム処理を実行する
-    pub def process(delta: Float64, paused: Bool, scene: Scene[s]): Scene[s] \ Node.Aef[s]
-            with Node[s] =
-        Scene.processAll(delta, paused, scene)
-
-    /// 物理演算（重力・ダンピング・速度積分）を適用する
-    pub def physicsProcess(delta: Float64, paused: Bool, gravity: Vec2.Vec2,
+    pub def process(delta: {delta = Float64}, paused: {paused = Bool},
                     scene: Scene[s]): Scene[s] \ Node.Aef[s]
             with Node[s] =
-        PhysicsStep.step(delta, paused, gravity, scene)
+        Scene.processAll(delta#delta, paused#paused, scene)
+
+    /// 物理演算（重力・ダンピング・速度積分）を適用する
+    pub def physicsProcess(delta: {delta = Float64}, paused: {paused = Bool},
+                    gravity: {gravity = Vec2.Vec2},
+                    scene: Scene[s]): Scene[s] \ Node.Aef[s]
+            with Node[s] =
+        PhysicsStep.step(delta#delta, paused#paused, gravity#gravity, scene)
 
     /// 衝突フェーズ: Area2D 重なり検出 → AreaHandler 発火 → RigidBody2D ↔ StaticBody2D 押し戻し
     /// 押し戻しは検出の後に行う（順序を逆にすると境界ピッタリで Area2D 重なりが外れる）

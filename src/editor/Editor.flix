@@ -8,7 +8,8 @@
 //
 // 動作概要:
 //   - F1 でエディタ ON/OFF
-//   - ON 時にシーンを走査し、Sprite2D / TextureButton / Label2D を編集対象として認識する
+//   - ON 時にシーンを走査し、Sprite2D / AnimatedSprite2D / TextureButton / Label2D を
+//     編集対象として認識する
 //   - 左クリックで対象ノードを選択（黄色の矩形で囲む）
 //   - ドラッグで pos 変更（シーン上は即時更新、ドロップ時に JSON 書き戻し）
 //   - HotReload watcher が JSON 変更を拾って次フレームでシーン再構築
