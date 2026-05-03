@@ -159,18 +159,19 @@ mod LwjglLayer {
     // ========================================================================
 
     def keyToGlfw(key: GameEngine.Key): Int32 = match key {
-        case GameEngine.Key.W     => 87
-        case GameEngine.Key.A     => 65
-        case GameEngine.Key.S     => 83
-        case GameEngine.Key.D     => 68
-        case GameEngine.Key.Up    => 265
-        case GameEngine.Key.Down  => 264
-        case GameEngine.Key.Left  => 263
-        case GameEngine.Key.Right => 262
-        case GameEngine.Key.Enter  => 257
-        case GameEngine.Key.Space  => 32
-        case GameEngine.Key.Escape => 256
-        case GameEngine.Key.F1     => 290
+        case GameEngine.Key.W         => 87
+        case GameEngine.Key.A         => 65
+        case GameEngine.Key.S         => 83
+        case GameEngine.Key.D         => 68
+        case GameEngine.Key.Up        => 265
+        case GameEngine.Key.Down      => 264
+        case GameEngine.Key.Left      => 263
+        case GameEngine.Key.Right     => 262
+        case GameEngine.Key.Enter     => 257
+        case GameEngine.Key.Space     => 32
+        case GameEngine.Key.Escape    => 256
+        case GameEngine.Key.F1        => 290
+        case GameEngine.Key.LeftShift => 340
     }
 
     // ========================================================================

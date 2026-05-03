@@ -26,6 +26,7 @@ mod TestDragInput {
         nodeOrigin = Some(nodeGlobal),
         prevF1 = false,
         prevMouseLeft = true,
+        prevArrowKeys = KeyboardNudge.initialPrev(),
         rootJsonIndex = Map.empty()
     }
 
@@ -66,6 +67,7 @@ mod TestDragInput {
             nodeOrigin = None,
             prevF1 = false,
             prevMouseLeft = true,
+            prevArrowKeys = KeyboardNudge.initialPrev(),
             rootJsonIndex = Map.empty()
         };
         let next = DragInput.applyDrag({x = 150.0, y = 150.0}, state, scene);
