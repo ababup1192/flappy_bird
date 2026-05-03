@@ -139,9 +139,6 @@ mod BirdScene {
     // physicsProcess コールバック（bird.gd _physics_process 相当）
     // ========================================================================
 
-    /// FlyingState.update(delta) — bird.gd: 何もしない（メニュー画面で重力ゼロ静止）
-    def flyingUpdate(body: RigidBody2D): RigidBody2D = body
-
     /// FlappingState.update(delta) — bird.gd: 回転 -30° クランプ + 落下時 angVel = 1.5
     /// + 本家準拠の Y クランプ（Godot 版にはない独自追加）
     def flappingUpdate(body: RigidBody2D): RigidBody2D =
@@ -166,12 +163,6 @@ mod BirdScene {
             |> RigidBody2D.setLinearVelocity(newVel)
             |> RigidBody2D.setAngularVelocity(angVel2)
 
-    /// HitState.update(delta) — bird.gd: 何もしない（パイプ衝突後は回転加速のみ、物理積分に委任）
-    def hitUpdate(body: RigidBody2D): RigidBody2D = body
-
-    /// GroundedState.update(delta) — bird.gd: 何もしない（着地後は完全停止）
-    def groundedUpdate(body: RigidBody2D): RigidBody2D = body
-
     /// bird.gd `flap()` 相当: y velocity を flapVelocityY、angular velocity を flapAngularVelocity に上書き
     /// x velocity は現在値を保持する（input / ready 両方ともこの挙動でよい）
     def flap(body: RigidBody2D): RigidBody2D =
@@ -189,10 +180,8 @@ mod BirdScene {
         match node {
             case EngineNode.RigidBody2DWithState(body, NodeTag.Bird(birdData)) =>
                 let newBody = match birdData#state {
-                    case BirdState.Flying => flyingUpdate(body)
                     case BirdState.Flapping => flappingUpdate(body)
-                    case BirdState.Hit => hitUpdate(body)
-                    case BirdState.Grounded => groundedUpdate(body)
+                    case _ => body
                 };
                 (EngineNode.RigidBody2DWithState(newBody, NodeTag.Bird(birdData)), scene)
             case _ => (node, scene)
