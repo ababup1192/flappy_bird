@@ -173,6 +173,7 @@ mod LwjglLayer {
         case GameEngine.Key.Escape    => 256
         case GameEngine.Key.F1        => 290
         case GameEngine.Key.LeftShift => 340
+        case GameEngine.Key.LeftCtrl  => 341
         case GameEngine.Key.LeftSuper => 343
     }
 

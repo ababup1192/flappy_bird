@@ -1,31 +1,52 @@
 {
-  "type": "CanvasLayer",
-  "name": "menu",
-  "layer": 2,
   "children": [
     {
-      "type": "Sprite2D",
       "name": "title_logo",
-      "pos": [144, 140],
-      "scale": [2, 2],
-      "texture": "label_flappy_bird"
+      "pos": [
+        144,
+        1.4E+2
+      ],
+      "scale": [
+        2,
+        2
+      ],
+      "texture": "label_flappy_bird",
+      "type": "Sprite2D"
     },
     {
-      "type": "Sprite2D",
       "name": "instructions_img",
-      "pos": [144, 340],
-      "scale": [2, 2],
-      "texture": "instructions"
+      "pos": [
+        144,
+        340
+      ],
+      "scale": [
+        2,
+        2
+      ],
+      "texture": "instructions",
+      "type": "Sprite2D"
     },
     {
-      "type": "TextureButton",
+      "centered": true,
       "name": "play_button",
-      "pos": [144, 440],
-      "scale": [2, 2],
-      "size": [104, 58],
+      "pos": [
+        144,
+        440
+      ],
+      "scale": [
+        2,
+        2
+      ],
+      "size": [
+        104,
+        58
+      ],
       "textureNormal": "button_play_normal",
       "texturePressed": "button_play_pressed",
-      "centered": true
+      "type": "TextureButton"
     }
-  ]
+  ],
+  "layer": 2,
+  "name": "menu",
+  "type": "CanvasLayer"
 }

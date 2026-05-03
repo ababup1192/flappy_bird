@@ -113,8 +113,10 @@ mod Editor {
         let curArrows = KeyboardNudge.readArrows();
         let zNow = GameEngine.Game.isKeyPressed(GameEngine.Key.Z);
         let cmdNow = GameEngine.Game.isKeyPressed(GameEngine.Key.LeftSuper);
-        // Cmd+Z のエッジ検出: Cmd 押下中 + Z が前フレーム未押下 → 今フレーム押下
-        let undoTriggered = cmdNow and zNow and not stateData#prevZ;
+        let ctrlNow = GameEngine.Game.isKeyPressed(GameEngine.Key.LeftCtrl);
+        // Cmd+Z / Ctrl+Z のエッジ検出。
+        // macOS GLFW は Cmd 押下中に Z の状態を更新しないことがあるため Ctrl もフォールバックで拾う
+        let undoTriggered = (cmdNow or ctrlNow) and zNow and not stateData#prevZ;
         // F1 のエッジ検出: 前フレーム未押下 → 今フレーム押下 でトグル
         let toggledOn = if (f1 and not stateData#prevF1) not stateData#on else stateData#on;
         // OFF へ倒れたフレームは選択 / ドラッグ状態をクリアする。

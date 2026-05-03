@@ -75,6 +75,7 @@ mod GameEngine {
         case Escape
         case F1
         case LeftShift
+        case LeftCtrl
         case LeftSuper
     }
 
@@ -84,7 +85,7 @@ mod GameEngine {
         Key.W :: Key.A :: Key.S :: Key.D :: Key.Z ::
         Key.Up :: Key.Down :: Key.Left :: Key.Right ::
         Key.Enter :: Key.Space :: Key.Escape :: Key.F1 ::
-        Key.LeftShift :: Key.LeftSuper :: Nil
+        Key.LeftShift :: Key.LeftCtrl :: Key.LeftSuper :: Nil
 
     /// マウスボタン
     pub enum MouseButton with Eq, Order, ToString {
