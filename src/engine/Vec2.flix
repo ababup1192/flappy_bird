@@ -9,7 +9,8 @@ mod Vec2 {
     // Math Helpers
     // ========================================================================
 
-    def sqrt(v: Float64): Float64 =
+    /// 平方根（pure キャスト）
+    pub def sqrt(v: Float64): Float64 =
         unchecked_cast(Math.sqrt(v) as _ \ {})
 
     /// 円周率

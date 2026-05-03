@@ -81,6 +81,222 @@ mod Overlay {
             case None               => false
         }
 
+    /// シーンに含まれるすべての CollisionObject2D の衝突形状を、
+    /// Godot のデバッグ表示風に薄い水色の半透明で塗りつぶす。
+    /// 描画プリミティブは ColorRect しかないため、円・カプセルはスキャンラインで近似する。
+    /// 形状の中心座標は `Scene.screenPositionAt` を使い、レンダラの描画位置と一致させる
+    pub def addCollisionShapes(cameraOffset: Vec2.Vec2,
+                               scene: Scene[NodeTag]): Scene[NodeTag] =
+        let layerName = collisionLayerName();
+        let layer = CanvasLayer.make(collisionLayerIndex());
+        let withLayer = Scene.addNode(layerName,
+            EngineNode.CanvasLayerWithState(layer, NodeTag.NoTag), scene);
+        Scene.preorderPaths(scene)
+            |> List.foldLeft((accScene, path) ->
+                addShapeAtPath(layerName, path, cameraOffset, scene, accScene), withLayer)
+
+    /// 指定パスのノードに衝突形状があれば、それを構成する塗り矩形を CanvasLayer の子に追加する。
+    /// 形状の中心座標は `Scene.screenPositionAt` を使い、選択枠と同じくカメラ追従を尊重する
+    def addShapeAtPath(layerName: String, path: NodePath,
+                       cameraOffset: Vec2.Vec2,
+                       sourceScene: Scene[NodeTag],
+                       acc: Scene[NodeTag]): Scene[NodeTag] =
+        match Scene.getEngineNode(path, sourceScene) {
+            case None => acc
+            case Some(node) => match CollisionObject2D.getCollisionShape(node) {
+                case None => acc
+                case Some(shape) =>
+                    let center = Scene.screenPositionAt(path, cameraOffset, sourceScene);
+                    let style = collisionStyle();
+                    let rects = collisionShapeToFillRects(center, shape, style);
+                    let pathTag = pathToTag(path);
+                    appendFillRects(layerName, pathTag, rects, style, acc)
+            }
+        }
+
+    /// 衝突形状を、塗りつぶし用の矩形リストへ変換する。
+    /// 形状を outlineThickness ぶん膨らませた「外側」と元の「内側」の差分にフチ色、
+    /// 内側部分に塗り色を割り当てる（リング状に外周だけ outline になる）。
+    /// CircleShape2D / CapsuleShape2D は y 方向のスキャンラインで近似する
+    def collisionShapeToFillRects(center: Vec2.Vec2,
+                                   shape: CollisionShape2D,
+                                   style: CollisionStyle): List[FillRect] =
+        match shape {
+            case CollisionShape2D.RectShape2D(r) =>
+                rectFillAndOutlineRects(center, r#width, r#height,
+                                         style#outlineThickness)
+            case CollisionShape2D.CircleShape2D(c) =>
+                circleRingScanLines(center, c#radius, style#outlineThickness)
+            case CollisionShape2D.CapsuleShape2D(c) =>
+                capsuleRingScanLines(center, c#radius, c#height, c#vertical,
+                                      style#outlineThickness)
+        }
+
+    /// 矩形は「内側 1 枚 + 4 辺の outline」で構成する
+    def rectFillAndOutlineRects(center: Vec2.Vec2, width: Float64, height: Float64,
+                                 outlineThickness: Float64): List[FillRect] =
+        let halfW = width / 2.0;
+        let halfH = height / 2.0;
+        let topLeft = {x = center#x - halfW, y = center#y - halfH};
+        let fill = {topLeft = topLeft, size = {x = width, y = height},
+                    isOutline = false};
+        let topEdge = {topLeft = {x = topLeft#x - outlineThickness,
+                                  y = topLeft#y - outlineThickness},
+                       size = {x = width + 2.0 * outlineThickness, y = outlineThickness},
+                       isOutline = true};
+        let bottomEdge = {topLeft = {x = topLeft#x - outlineThickness,
+                                     y = topLeft#y + height},
+                          size = {x = width + 2.0 * outlineThickness, y = outlineThickness},
+                          isOutline = true};
+        let leftEdge = {topLeft = {x = topLeft#x - outlineThickness, y = topLeft#y},
+                        size = {x = outlineThickness, y = height},
+                        isOutline = true};
+        let rightEdge = {topLeft = {x = topLeft#x + width, y = topLeft#y},
+                         size = {x = outlineThickness, y = height},
+                         isOutline = true};
+        fill :: topEdge :: bottomEdge :: leftEdge :: rightEdge :: Nil
+
+    /// 円を「外側半径 R+t / 内側半径 R」のリングとしてスキャンラインに展開する
+    def circleRingScanLines(center: Vec2.Vec2, radius: Float64,
+                             outlineThickness: Float64): List[FillRect] =
+        let outerRadius = radius + outlineThickness;
+        let outerHalfWidthAt = y -> circleHalfWidthAt(outerRadius, y);
+        let innerHalfWidthAt = y -> circleHalfWidthAt(radius, y);
+        ringScanLines(center, outerRadius, outerHalfWidthAt, innerHalfWidthAt)
+
+    /// カプセルを「外側 (R+t, H+2t) / 内側 (R, H)」のリングとしてスキャンラインに展開する。
+    /// Godot CapsuleShape2D 準拠（vertical=true なら縦長）
+    def capsuleRingScanLines(center: Vec2.Vec2, radius: Float64,
+                              height: Float64, vertical: Bool,
+                              outlineThickness: Float64): List[FillRect] =
+        let outerRadius = radius + outlineThickness;
+        // 矩形帯の半長は内側 / 外側で同じ（H/2 - R = (H+2t)/2 - (R+t)）
+        let halfSeg = Float64.max(0.0, height / 2.0 - radius);
+        let yExtent = if (vertical)
+                          height / 2.0 + outlineThickness
+                      else
+                          outerRadius;
+        let halfWidthFn = if (vertical)
+                              capsuleVerticalHalfWidthAt(halfSeg)
+                          else
+                              capsuleHorizontalHalfWidthAt(halfSeg);
+        let outerHalfWidthAt = halfWidthFn(outerRadius);
+        let innerHalfWidthAt = halfWidthFn(radius);
+        ringScanLines(center, yExtent, outerHalfWidthAt, innerHalfWidthAt)
+
+    /// 円の半幅（|y| > R で 0、それ以外は sqrt(R^2 - y^2)）
+    def circleHalfWidthAt(radius: Float64, y: Float64): Float64 =
+        let inside = radius * radius - y * y;
+        if (inside <= 0.0) 0.0
+        else Vec2.sqrt(inside)
+
+    /// 縦長カプセルの半幅: 矩形帯では R 一定、上下キャップでは円の半幅
+    def capsuleVerticalHalfWidthAt(halfSeg: Float64):
+            Float64 -> Float64 -> Float64 =
+        radius -> y -> {
+            let absY = Float64.abs(y);
+            if (absY <= halfSeg) radius
+            else circleHalfWidthAt(radius, absY - halfSeg)
+        }
+
+    /// 横長カプセルの半幅: y 帯では `halfSeg + 円の半幅`
+    def capsuleHorizontalHalfWidthAt(halfSeg: Float64):
+            Float64 -> Float64 -> Float64 =
+        radius -> y -> {
+            let circleHalf = circleHalfWidthAt(radius, y);
+            if (circleHalf <= 0.0) 0.0
+            else halfSeg + circleHalf
+        }
+
+    /// 外側形状と内側形状の半幅関数を受け取り、各 y 行に対して
+    /// 「左 outline + 中央 fill + 右 outline」または「全幅 outline（内側がない行）」
+    /// を作って返す
+    def ringScanLines(center: Vec2.Vec2, yExtent: Float64,
+                      outerHalfWidthAt: Float64 -> Float64,
+                      innerHalfWidthAt: Float64 -> Float64): List[FillRect] =
+        let yExtentInt = Float64.round(yExtent)
+            |> Float64.tryToInt32 |> Option.getWithDefault(0i32);
+        List.range(-yExtentInt, yExtentInt + 1i32)
+            |> List.flatMap(yi -> {
+                let y = Int32.toFloat64(yi);
+                let outerHalf = outerHalfWidthAt(y);
+                if (outerHalf <= 0.0) (Nil: List[FillRect])
+                else {
+                    let innerHalf = innerHalfWidthAt(y);
+                    if (innerHalf <= 0.0)
+                        // 内側がない行は全幅 outline（円・カプセルの上下キャップ）
+                        {topLeft = {x = center#x - outerHalf, y = center#y + y},
+                         size = {x = 2.0 * outerHalf, y = 1.0},
+                         isOutline = true} :: Nil
+                    else {
+                        // 左 outline + 中央 fill + 右 outline でリング状の縁を作る
+                        let leftEdge = {topLeft = {x = center#x - outerHalf,
+                                                   y = center#y + y},
+                                        size = {x = outerHalf - innerHalf, y = 1.0},
+                                        isOutline = true};
+                        let fill = {topLeft = {x = center#x - innerHalf,
+                                               y = center#y + y},
+                                    size = {x = 2.0 * innerHalf, y = 1.0},
+                                    isOutline = false};
+                        let rightEdge = {topLeft = {x = center#x + innerHalf,
+                                                    y = center#y + y},
+                                         size = {x = outerHalf - innerHalf, y = 1.0},
+                                         isOutline = true};
+                        leftEdge :: fill :: rightEdge :: Nil
+                    }
+                }
+            })
+
+    /// FillRect の isOutline を見て塗り or フチの色 / α を選んで ColorRect を作り、
+    /// CanvasLayer の子として連番名で追加する
+    def appendFillRects(layerName: String, pathTag: String,
+                        rects: List[FillRect],
+                        style: CollisionStyle,
+                        scene: Scene[NodeTag]): Scene[NodeTag] =
+        List.foldLeft((acc, indexed) -> {
+            let (idx, rect) = indexed;
+            let childName = "${pathTag}_${idx}";
+            let color = if (rect#isOutline) style#outlineColor else style#fillColor;
+            let alpha = if (rect#isOutline) style#outlineAlpha else style#fillAlpha;
+            let colorRect = ColorRect.make(rect#size, color)
+                |> Node2D.setPosition(rect#topLeft)
+                |> ColorRect.setAlpha(alpha);
+            Scene.addChildAt(layerName :: Nil, childName,
+                EngineNode.ColorRectWithState(colorRect, NodeTag.NoTag), acc)
+        }, scene, List.zipWithIndex(rects))
+
+    /// NodePath を子ノード名に使える文字列に変換する（"/" 区切り）
+    def pathToTag(path: NodePath): String =
+        String.intercalate("/", path)
+
+    /// 塗りつぶしに使う 1 枚の矩形（左上 + サイズ + フチ用フラグ）
+    type alias FillRect = {
+        topLeft = Vec2.Vec2,
+        size = Vec2.Vec2,
+        isOutline = Bool
+    }
+
+    /// 衝突可視化のスタイル（塗りとフチの色 / α / 太さ）
+    type alias CollisionStyle = {
+        fillColor = {r = Float32, g = Float32, b = Float32},
+        fillAlpha = Float32,
+        outlineColor = {r = Float32, g = Float32, b = Float32},
+        outlineAlpha = Float32,
+        outlineThickness = Float64
+    }
+
+    /// 衝突可視化のスタイル: Godot のデバッグ表示風（薄い水色塗り + 不透明な水色フチ 1px）
+    def collisionStyle(): CollisionStyle =
+        {fillColor = {r = 0.4f32, g = 0.7f32, b = 1.0f32}, fillAlpha = 0.4f32,
+         outlineColor = {r = 0.1f32, g = 0.5f32, b = 0.8f32}, outlineAlpha = 1.0f32,
+         outlineThickness = 1.0}
+
+    /// 衝突可視化用 CanvasLayer のノード名
+    def collisionLayerName(): String = "_editor_collision_layer"
+
+    /// 衝突可視化用レイヤ番号: 選択枠（999）より背面、ゲーム本体の最前面 layer=2 より前面
+    def collisionLayerIndex(): Int32 = 998
+
     /// 選択枠のスタイル: 明るい黄色 × 2px
     def selectionStyle(): OutlineStyle = {
         layerName = "_editor_box_layer",

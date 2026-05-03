@@ -47,11 +47,13 @@ mod KeyboardNudge {
 
     /// 押下エッジに応じて選択ノードを動かし JSON に書き戻す。
     /// Shift 押下中は 10px、それ以外は 1px ステップ。
-    /// 選択ノードがない / 動きがない場合は何もしない（ファイル書き込みも発生しない）
+    /// 選択ノードがない / 動きがない場合は何もしない（ファイル書き込みも発生しない）。
+    /// 動いたときは EditHistory.Rewind に nudge 直前の位置を save する
     pub def applyNudge(stateData: Editor.EditorStateData,
                        curArrows: ArrowKeys,
                        scene: Scene[NodeTag]):
-            Scene[NodeTag] \ {GameEngine.Game, Fs.FileRead, Fs.FileWrite} =
+            Scene[NodeTag] \ {EditHistory.Rewind, GameEngine.Game,
+                              Fs.FileRead, Fs.FileWrite} =
         match stateData#selected {
             case None => scene
             case Some((jsonPath, nodePath)) =>
@@ -63,11 +65,14 @@ mod KeyboardNudge {
                 else moveAndSave(jsonPath, nodePath, delta, scene)
         }
 
-    /// 選択ノードの global 位置を delta だけ動かして JSON に書き戻す
+    /// 選択ノードの global 位置を delta だけ動かして JSON に書き戻す。
+    /// nudge 直前の位置を `EditHistory.Rewind.save` で記録する（Cmd+Z 用）
     def moveAndSave(jsonPath: String, nodePath: NodePath, delta: Vec2.Vec2,
                     scene: Scene[NodeTag]):
-            Scene[NodeTag] \ {Fs.FileRead, Fs.FileWrite} =
+            Scene[NodeTag] \ {EditHistory.Rewind, Fs.FileRead, Fs.FileWrite} =
         let curGlobal = Scene.globalPositionAt(nodePath, scene);
+        EditHistory.Rewind.save({jsonPath = jsonPath, nodePath = nodePath,
+                                 prevWorldPos = curGlobal});
         let newGlobal = Vec2.add(curGlobal, delta);
         let newScene = Scene.setGlobalPositionAt(nodePath, newGlobal, scene);
         let localPos = match Scene.getEngineNode(nodePath, newScene) {

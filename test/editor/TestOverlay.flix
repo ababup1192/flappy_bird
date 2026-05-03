@@ -205,4 +205,75 @@ mod TestOverlay {
     @Test
     def testAddSelectionBoxAddsFourEdgesRunner(): Unit \ Assert =
         withMockTexture32(testAddSelectionBoxAddsFourEdges)
+
+    // ====================================================================
+    // addCollisionShapes — 衝突形状を半透明 ColorRect 群で塗りつぶす
+    // ====================================================================
+
+    /// 衝突形状のないシーン（Sprite だけ）に addCollisionShapes すると、
+    /// CanvasLayer は作られるがその下に子は付かない
+    @Test
+    def testAddCollisionShapesNoShapesAddsEmptyLayer(): Unit \ Assert =
+        let sprite = Sprite2D.make("dummy.png", {x = 100.0, y = 100.0}, {x = 1.0, y = 1.0});
+        let s: Scene[NodeTag] = Scene.empty();
+        let scene = s |> Scene.addNode("hero",
+            EngineNode.Sprite2DWithState(sprite, NodeTag.NoTag));
+        let result = Overlay.addCollisionShapes({x = 0.0, y = 0.0}, scene);
+        let children = Scene.getChildrenAt("_editor_collision_layer" :: Nil, result);
+        Assert.assertEq(expected = (true, 0), (Option.nonEmpty(
+            Scene.getEngineNode("_editor_collision_layer" :: Nil, result)),
+            List.length(children)))
+
+    /// RectShape2D の Area2D が 1 つあると、CanvasLayer の下に
+    /// 中身 1 枚 + 4 辺のフチで合計 5 枚の ColorRect が追加される
+    @Test
+    def testAddCollisionShapesRectAddsFillAndOutline(): Unit \ Assert =
+        let area = Area2D.make({x = 100.0, y = 100.0},
+            CollisionShape2D.RectShape2D({width = 32.0, height = 16.0}));
+        let s: Scene[NodeTag] = Scene.empty();
+        let scene = s |> Scene.addNode("trigger",
+            EngineNode.Area2DWithState(area, NodeTag.NoTag));
+        let result = Overlay.addCollisionShapes({x = 0.0, y = 0.0}, scene);
+        let children = Scene.getChildrenAt("_editor_collision_layer" :: Nil, result);
+        // 内側 fill 1 + 上下左右の outline 4 = 5
+        Assert.assertEq(expected = 5, List.length(children))
+
+    /// CircleShape2D（半径 5、フチ太さ 1）はリング方式で多数の ColorRect を生成する。
+    /// 上下キャップ行（内側がない）2 枚 + 内側がある 9 行 × 3 枚 = 29 枚
+    ///
+    ///   y=-5: outerHalf≈3.32, innerHalf=0    -> 全幅 outline 1 枚
+    ///   y=-4..4 (9 行): innerHalf>0          -> 左 outline + 中央 fill + 右 outline 3 枚
+    ///   y=+5: outerHalf≈3.32, innerHalf=0    -> 全幅 outline 1 枚
+    @Test
+    def testAddCollisionShapesCircleAddsRingScanLines(): Unit \ Assert =
+        let area = Area2D.make({x = 100.0, y = 100.0},
+            CollisionShape2D.CircleShape2D({radius = 5.0}));
+        let s: Scene[NodeTag] = Scene.empty();
+        let scene = s |> Scene.addNode("ball",
+            EngineNode.Area2DWithState(area, NodeTag.NoTag));
+        let result = Overlay.addCollisionShapes({x = 0.0, y = 0.0}, scene);
+        let count = Scene.getChildrenAt("_editor_collision_layer" :: Nil, result)
+            |> List.length;
+        Assert.assertEq(expected = 29, count)
+
+    /// fill 部分は半透明（alpha < 1.0）、outline 部分は不透明（alpha = 1.0）。
+    /// 5 枚の子のうち、alpha 値の集合が想定の組み合わせになっていることを確認する
+    @Test
+    def testAddCollisionShapesFillTranslucentOutlineOpaque(): Unit \ Assert =
+        let area = Area2D.make({x = 50.0, y = 50.0},
+            CollisionShape2D.RectShape2D({width = 10.0, height = 10.0}));
+        let s: Scene[NodeTag] = Scene.empty();
+        let scene = s |> Scene.addNode("box",
+            EngineNode.Area2DWithState(area, NodeTag.NoTag));
+        let result = Overlay.addCollisionShapes({x = 0.0, y = 0.0}, scene);
+        let alphas = Scene.getChildrenAt("_editor_collision_layer" :: Nil, result)
+            |> List.map(childName ->
+                match Scene.getEngineNode("_editor_collision_layer" :: childName :: Nil, result) {
+                    case Some(EngineNode.ColorRectWithState(ColorRect.ColorRect(r), _)) => r#alpha
+                    case _ => bug!("collision overlay child should be a ColorRect")
+                });
+        let translucentCount = List.count(a -> a < 1.0f32, alphas);
+        let opaqueCount = List.count(a -> a >= 1.0f32, alphas);
+        // 矩形は内側 fill 1 枚（半透明）+ 4 辺の outline（不透明）
+        Assert.assertEq(expected = (1, 4), (translucentCount, opaqueCount))
 }

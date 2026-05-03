@@ -163,6 +163,7 @@ mod LwjglLayer {
         case GameEngine.Key.A         => 65
         case GameEngine.Key.S         => 83
         case GameEngine.Key.D         => 68
+        case GameEngine.Key.Z         => 90
         case GameEngine.Key.Up        => 265
         case GameEngine.Key.Down      => 264
         case GameEngine.Key.Left      => 263
@@ -172,6 +173,7 @@ mod LwjglLayer {
         case GameEngine.Key.Escape    => 256
         case GameEngine.Key.F1        => 290
         case GameEngine.Key.LeftShift => 340
+        case GameEngine.Key.LeftSuper => 343
     }
 
     // ========================================================================

@@ -27,6 +27,7 @@ mod TestDragInput {
         prevF1 = false,
         prevMouseLeft = true,
         prevArrowKeys = KeyboardNudge.initialPrev(),
+        prevZ = false,
         rootJsonIndex = Map.empty()
     }
 
@@ -68,6 +69,7 @@ mod TestDragInput {
             prevF1 = false,
             prevMouseLeft = true,
             prevArrowKeys = KeyboardNudge.initialPrev(),
+            prevZ = false,
             rootJsonIndex = Map.empty()
         };
         let next = DragInput.applyDrag({x = 150.0, y = 150.0}, state, scene);
@@ -116,9 +118,13 @@ mod TestDragInput {
     // ====================================================================
 
     def withForbiddenFs(f: Unit -> a \
-            {Assert, GameEngine.Game, Fs.FileRead, Fs.FileWrite}): a \ Assert =
+            {Assert, GameEngine.Game, Fs.FileRead, Fs.FileWrite,
+             EditHistory.Rewind}): a \ Assert =
         run {
             f()
+        } with handler EditHistory.Rewind {
+            def save(_, _) = bug!("unexpected EditHistory.save")
+            def rewind(_) = bug!("unexpected EditHistory.rewind")
         } with handler Fs.FileWrite {
             def write(_, _, _) = bug!("unexpected file write")
             def writeLines(_, _, _) = bug!("unexpected file writeLines")
@@ -152,7 +158,8 @@ mod TestDragInput {
     /// クリック → そのまま離す（位置不変）で release を迎えたとき、
     /// JSON 書き戻し（Fs.FileWrite）は発生してはならない
     def testHandleMouseClickOnlySkipsWrite(): Unit \
-            {Assert, GameEngine.Game, Fs.FileRead, Fs.FileWrite} =
+            {Assert, GameEngine.Game, Fs.FileRead, Fs.FileWrite,
+             EditHistory.Rewind} =
         let scene = sceneWithSprite("hero", {x = 100.0, y = 100.0});
         // 押下時点で nodeOrigin = (100, 100) を記録した状態を作る。
         // mouseLeft=false (releasedNow), prevMouseLeft=true (前フレーム押下中)

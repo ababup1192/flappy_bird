@@ -32,6 +32,7 @@ mod Editor {
     /// prevF1:         前フレームの F1 押下状態（エッジ検出用）
     /// prevMouseLeft:  前フレームのマウス左ボタン押下状態（エッジ検出用）
     /// prevArrowKeys:  前フレームの矢印キー押下状態（KeyboardNudge のエッジ検出用）
+    /// prevZ:          前フレームの Z 押下状態（Cmd+Z エッジ検出用）
     /// rootJsonIndex:  「シーンのルートノード名 → 由来する scene.json ファイルパス」の
     ///                 索引。Game.start で loadJsonRootIndex() の結果を入れる
     pub type alias EditorStateData = {
@@ -42,6 +43,7 @@ mod Editor {
         prevF1 = Bool,
         prevMouseLeft = Bool,
         prevArrowKeys = KeyboardNudge.ArrowKeys,
+        prevZ = Bool,
         rootJsonIndex = Map[NodeName, String]
     }
 
@@ -54,6 +56,7 @@ mod Editor {
         prevF1 = false,
         prevMouseLeft = false,
         prevArrowKeys = KeyboardNudge.initialPrev(),
+        prevZ = false,
         rootJsonIndex = rootJsonIndex
     }
 
@@ -70,11 +73,13 @@ mod Editor {
     /// 使うだけでビジュアルエディタが使える。watcher の Receiver はハンドラが内部に
     /// 隠して持つので、gameLoop からは Editor.pollReload() で消費する。
     pub def withState(rc: Region[r]):
-            (Unit -> Unit \ ef) -> Unit \ (ef - EditorState) + r + Fs.Glob + Fs.FileRead +
-                                          Chan + NonDet + IO + Fs.ModificationTime =
+            (Unit -> Unit \ ef) -> Unit \ (ef - EditorState - EditHistory.Rewind) + r +
+                                          Fs.Glob + Fs.FileRead + Chan + NonDet + IO +
+                                          Fs.ModificationTime =
         thunk -> {
             let editorIndex = loadJsonRootIndex();
             let editorRef: Ref[EditorStateData, r] = Ref.fresh(rc, initialState(editorIndex));
+            let historyRef: Ref[List[EditHistory.Entry], r] = Ref.fresh(rc, Nil);
             let reloadRx = HotReload.startWatcher();
             run {
                 thunk()
@@ -82,18 +87,34 @@ mod Editor {
                 def get(k) = k(Ref.get(editorRef))
                 def put(stateData, k) = { Ref.put(stateData, editorRef); k() }
                 def pollReload(k) = k(HotReload.pollReload(reloadRx))
+            } with handler EditHistory.Rewind {
+                def save(entry, k) = {
+                    Ref.put(entry :: Ref.get(historyRef), historyRef);
+                    k(())
+                }
+                def rewind(k) = match Ref.get(historyRef) {
+                    case Nil          => k(None)
+                    case top :: rest =>
+                        Ref.put(rest, historyRef);
+                        k(Some(top))
+                }
             }
         }
 
     /// 入力処理を行いシーンを更新する。Game.flix の gameLoop から毎フレーム呼ぶ。
     /// 副作用: EditorState を読み書き、JSON を読み書き、マウス・キー入力を読む
     pub def handleInput(scene: Scene[NodeTag]):
-            Scene[NodeTag] \ {EditorState, GameEngine.Game, Fs.FileRead, Fs.FileWrite} =
+            Scene[NodeTag] \ {EditorState, EditHistory.Rewind, GameEngine.Game,
+                              Fs.FileRead, Fs.FileWrite} =
         let stateData = EditorState.get();
         let f1 = GameEngine.Game.isKeyPressed(GameEngine.Key.F1);
         let mouseLeft = GameEngine.Game.isMouseButtonPressed(GameEngine.MouseButton.Left);
         let mousePos = GameEngine.Game.getMousePosition();
         let curArrows = KeyboardNudge.readArrows();
+        let zNow = GameEngine.Game.isKeyPressed(GameEngine.Key.Z);
+        let cmdNow = GameEngine.Game.isKeyPressed(GameEngine.Key.LeftSuper);
+        // Cmd+Z のエッジ検出: Cmd 押下中 + Z が前フレーム未押下 → 今フレーム押下
+        let undoTriggered = cmdNow and zNow and not stateData#prevZ;
         // F1 のエッジ検出: 前フレーム未押下 → 今フレーム押下 でトグル
         let toggledOn = if (f1 and not stateData#prevF1) not stateData#on else stateData#on;
         // OFF へ倒れたフレームは選択 / ドラッグ状態をクリアする。
@@ -105,7 +126,8 @@ mod Editor {
              prevF1 = f1 | stateData};
         if (not toggledOn) {
             EditorState.put({prevMouseLeft = mouseLeft,
-                             prevArrowKeys = curArrows | stateAfterToggle});
+                             prevArrowKeys = curArrows,
+                             prevZ = zNow | stateAfterToggle});
             scene
         } else {
             // エディタ ON 時のマウス処理。カメラ追従中のノード（bird など）も
@@ -119,9 +141,33 @@ mod Editor {
                 KeyboardNudge.applyNudge(afterMouseState, curArrows, afterMouseScene)
             else
                 afterMouseScene;
+            // Cmd+Z で直近の編集を巻き戻す（ドラッグ中は触らない）
+            let finalScene = if (undoTriggered and Option.isEmpty(afterMouseState#dragOrigin))
+                applyUndo(nudgedScene)
+            else
+                nudgedScene;
             EditorState.put({prevMouseLeft = mouseLeft,
-                             prevArrowKeys = curArrows | afterMouseState});
-            nudgedScene
+                             prevArrowKeys = curArrows,
+                             prevZ = zNow | afterMouseState});
+            finalScene
+        }
+
+    /// Rewind から 1 件取り出してノードを記録された位置に戻し、JSON にも書き戻す。
+    /// 履歴に何もなければ scene 不変
+    def applyUndo(scene: Scene[NodeTag]):
+            Scene[NodeTag] \ {EditHistory.Rewind, Fs.FileRead, Fs.FileWrite} =
+        match EditHistory.Rewind.rewind() {
+            case None => scene
+            case Some(entry) =>
+                let restored = Scene.setGlobalPositionAt(
+                    entry#nodePath, entry#prevWorldPos, scene);
+                // 復元位置を JSON にも書き戻す（ここでは save しない = stack に積まない）
+                let localPos = match Scene.getEngineNode(entry#nodePath, restored) {
+                    case Some(engineNode) => Node2D.getPosition(engineNode)
+                    case None             => Vec2.zero()
+                };
+                SceneSerializer.updatePos(entry#jsonPath, entry#nodePath, localPos);
+                restored
         }
 
     /// 現在のシーンの有効カメラからビューポートオフセットを計算する。
@@ -151,6 +197,7 @@ mod Editor {
             let mousePos = GameEngine.Game.getMousePosition();
             let cameraOffset = activeCameraOffset(scene);
             scene
+                |> Overlay.addCollisionShapes(cameraOffset)
                 |> Overlay.addEditorIndicator(fontAtlas)
                 |> Overlay.addSelectionBox(stateData#rootJsonIndex, stateData#selected,
                                            cameraOffset)

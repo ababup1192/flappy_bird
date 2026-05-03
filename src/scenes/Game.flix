@@ -347,7 +347,7 @@ mod Game {
                  scene: Scene[NodeTag]):
                  Unit \ {GameEngine.Game, GameEngine.Audio, Math.Random, Fs.FileRead,
                          Fs.FileWrite, BirdStateChanged, Phase, Recycle,
-                         Editor.EditorState} =
+                         Editor.EditorState, EditHistory.Rewind} =
         if (GameEngine.Game.shouldClose() or
             GameEngine.Game.isKeyPressed(GameEngine.Key.Escape)) ()
         else {

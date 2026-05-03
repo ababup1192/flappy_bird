@@ -65,6 +65,7 @@ mod GameEngine {
         case A
         case S
         case D
+        case Z
         case Up
         case Down
         case Left
@@ -74,15 +75,16 @@ mod GameEngine {
         case Escape
         case F1
         case LeftShift
+        case LeftSuper
     }
 
     /// Key の全バリアント。InputEvent などのイベント駆動入力で
     /// 走査対象として使う。新しい Key を追加した際はここにも追加する。
     pub def allKeys(): List[Key] =
-        Key.W :: Key.A :: Key.S :: Key.D ::
+        Key.W :: Key.A :: Key.S :: Key.D :: Key.Z ::
         Key.Up :: Key.Down :: Key.Left :: Key.Right ::
         Key.Enter :: Key.Space :: Key.Escape :: Key.F1 ::
-        Key.LeftShift :: Nil
+        Key.LeftShift :: Key.LeftSuper :: Nil
 
     /// マウスボタン
     pub enum MouseButton with Eq, Order, ToString {

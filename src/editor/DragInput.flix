@@ -22,7 +22,7 @@ mod DragInput {
                         stateData: Editor.EditorStateData,
                         scene: Scene[NodeTag]):
             (Editor.EditorStateData, Scene[NodeTag]) \
-            {GameEngine.Game, Fs.FileRead, Fs.FileWrite} =
+            {EditHistory.Rewind, GameEngine.Game, Fs.FileRead, Fs.FileWrite} =
         let prevLeft = stateData#prevMouseLeft;
         let pressedNow = mouse#leftDown and not prevLeft;       // 押下したフレーム
         let releasedNow = (not mouse#leftDown) and prevLeft;    // 離した（ドロップ）フレーム
@@ -81,10 +81,12 @@ mod DragInput {
 
     /// ドロップ: 現在のシーン上のノード位置を JSON に書き戻し、ドラッグ状態を解除する。
     /// 書き戻し対象は「ローカル位置」（JSON が pos として持つのはローカル座標のため）。
-    /// クリックのみで位置が変わっていない場合はファイル書き込みをスキップする
+    /// クリックのみで位置が変わっていない場合はファイル書き込みをスキップする。
+    /// 移動が発生したときは `EditHistory.Rewind.save` で巻き戻し用にドラッグ開始位置を残す
     def saveDraggedPos(stateData: Editor.EditorStateData,
                        scene: Scene[NodeTag]):
-            (Editor.EditorStateData, Scene[NodeTag]) \ {Fs.FileRead, Fs.FileWrite} =
+            (Editor.EditorStateData, Scene[NodeTag]) \
+            {EditHistory.Rewind, Fs.FileRead, Fs.FileWrite} =
         match stateData#selected {
             case Some((jsonPath, nodePath)) =>
                 let currentGlobal = Scene.globalPositionAt(nodePath, scene);
@@ -94,6 +96,14 @@ mod DragInput {
                     case None => false
                 };
                 if (moved) {
+                    // 巻き戻し先 = ドラッグ開始時の global 位置
+                    match stateData#nodeOrigin {
+                        case Some(origin) =>
+                            EditHistory.Rewind.save({jsonPath = jsonPath,
+                                                     nodePath = nodePath,
+                                                     prevWorldPos = origin})
+                        case None => ()
+                    };
                     let localPos = match Scene.getEngineNode(nodePath, scene) {
                         case Some(engineNode) => Node2D.getPosition(engineNode)
                         case None => Vec2.zero()

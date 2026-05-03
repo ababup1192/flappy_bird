@@ -102,12 +102,13 @@ mod TestKeyboardNudge {
         prevF1 = false,
         prevMouseLeft = false,
         prevArrowKeys = KeyboardNudge.initialPrev(),
+        prevZ = false,
         rootJsonIndex = Map.empty()
     }
 
     /// 押下キーなし＆ prev も無し → エッジは立たない → 書き込みも発生しない
     def testApplyNudgeNoKeysNoWrite(): Unit \
-            {Assert, GameEngine.Game, Fs.FileRead, Fs.FileWrite} =
+            {Assert, GameEngine.Game, Fs.FileRead, Fs.FileWrite, EditHistory.Rewind} =
         let scene = sceneWithSprite("hero", {x = 100.0, y = 100.0});
         let state = quietState("hero.json", "hero" :: Nil);
         let curArrows = KeyboardNudge.initialPrev();
@@ -121,7 +122,7 @@ mod TestKeyboardNudge {
 
     /// 選択ノードがない → 何もしない
     def testApplyNudgeNoSelectionNoWrite(): Unit \
-            {Assert, GameEngine.Game, Fs.FileRead, Fs.FileWrite} =
+            {Assert, GameEngine.Game, Fs.FileRead, Fs.FileWrite, EditHistory.Rewind} =
         let scene = sceneWithSprite("hero", {x = 100.0, y = 100.0});
         // prev=false, cur=true（右）— 通常なら書き込みが発生するが selected=None なのでスキップ
         let state: Editor.EditorStateData = {
@@ -132,6 +133,7 @@ mod TestKeyboardNudge {
             prevF1 = false,
             prevMouseLeft = false,
             prevArrowKeys = KeyboardNudge.initialPrev(),
+            prevZ = false,
             rootJsonIndex = Map.empty()
         };
         let curArrows = {up = false, down = false, left = false, right = true};
@@ -145,7 +147,7 @@ mod TestKeyboardNudge {
 
     /// 押しっぱなし（prev=true, cur=true）はエッジが立たない → 書き込みなし
     def testApplyNudgeHeldKeyNoWrite(): Unit \
-            {Assert, GameEngine.Game, Fs.FileRead, Fs.FileWrite} =
+            {Assert, GameEngine.Game, Fs.FileRead, Fs.FileWrite, EditHistory.Rewind} =
         let scene = sceneWithSprite("hero", {x = 100.0, y = 100.0});
         let state: Editor.EditorStateData = {
             on = true,
@@ -155,6 +157,7 @@ mod TestKeyboardNudge {
             prevF1 = false,
             prevMouseLeft = false,
             prevArrowKeys = {up = false, down = false, left = false, right = true},
+            prevZ = false,
             rootJsonIndex = Map.empty()
         };
         let curArrows = {up = false, down = false, left = false, right = true};
@@ -170,9 +173,13 @@ mod TestKeyboardNudge {
     /// GameEngine.Game は LeftShift 押下=false / 他全 false、
     /// Fs.FileRead / FileWrite は呼ばれた瞬間に bug!()
     def withForbiddenFs(f: Unit -> a \
-            {Assert, GameEngine.Game, Fs.FileRead, Fs.FileWrite}): a \ Assert =
+            {Assert, GameEngine.Game, Fs.FileRead, Fs.FileWrite,
+             EditHistory.Rewind}): a \ Assert =
         run {
             f()
+        } with handler EditHistory.Rewind {
+            def save(_, _) = bug!("unexpected EditHistory.save")
+            def rewind(_) = bug!("unexpected EditHistory.rewind")
         } with handler Fs.FileWrite {
             def write(_, _, _) = bug!("unexpected file write")
             def writeLines(_, _, _) = bug!("unexpected file writeLines")
