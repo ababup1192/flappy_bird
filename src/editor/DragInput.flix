@@ -7,20 +7,27 @@
 
 mod DragInput {
 
+    /// 1 フレーム分のマウス状態スナップ（位置 + 左ボタン押下中かどうか）。
+    /// 押下／継続／離脱 の判定は `EditorStateData#prevMouseLeft` とのエッジから出す
+    pub type alias MouseSnapshot = {
+        pos = Vec2.Vec2,
+        leftDown = Bool
+    }
+
     /// マウスの押下／継続／離脱を判定し、選択 / ドラッグ更新 / 書き戻し をディスパッチする
-    pub def handleMouse(mousePos: Vec2.Vec2, mouseLeft: Bool,
+    pub def handleMouse(mouse: MouseSnapshot,
                         stateData: Editor.EditorStateData,
                         scene: Scene[NodeTag]):
             (Editor.EditorStateData, Scene[NodeTag]) \
             {GameEngine.Game, Fs.FileRead, Fs.FileWrite} =
         let prevLeft = stateData#prevMouseLeft;
-        let pressedNow = mouseLeft and not prevLeft;       // 押下したフレーム
-        let releasedNow = (not mouseLeft) and prevLeft;    // 離した（ドロップ）フレーム
+        let pressedNow = mouse#leftDown and not prevLeft;       // 押下したフレーム
+        let releasedNow = (not mouse#leftDown) and prevLeft;    // 離した（ドロップ）フレーム
         if (pressedNow) {
-            handleMouseDown(mousePos, stateData, scene)
-        } else if (mouseLeft and Option.nonEmpty(stateData#dragOrigin)) {
+            handleMouseDown(mouse#pos, stateData, scene)
+        } else if (mouse#leftDown and Option.nonEmpty(stateData#dragOrigin)) {
             // ドラッグ中: 選択ノードの位置を更新（書き戻しはまだしない）
-            (stateData, applyDrag(mousePos, stateData, scene))
+            (stateData, applyDrag(mouse#pos, stateData, scene))
         } else if (releasedNow and Option.nonEmpty(stateData#dragOrigin)) {
             // ドロップ: シーンの最終 pos を JSON に書き戻し（位置が変わっていれば）
             saveDraggedPos(stateData, scene)
@@ -49,7 +56,8 @@ mod DragInput {
     def handleMouseDown(mousePos: Vec2.Vec2, stateData: Editor.EditorStateData,
                         scene: Scene[NodeTag]):
             (Editor.EditorStateData, Scene[NodeTag]) \ GameEngine.Game =
-        let entries = EditableNode.collectAll(stateData#rootJsonIndex, scene);
+        let ctx = {rootJsonIndex = stateData#rootJsonIndex, scene = scene};
+        let entries = EditableNode.collectAll(ctx);
         let hit = Picking.pickTopAt(mousePos, entries, scene);
         match hit {
             case None =>

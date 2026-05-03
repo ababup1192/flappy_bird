@@ -15,26 +15,35 @@ mod Picking {
                       entries: List[EditableNode.EditableEntry],
                       scene: Scene[NodeTag]):
             Option[(EditableNode.EditableEntry, Vec2.Vec2)] =
-        let hits = entries |> List.filterMap(entry -> {
-            let globalPos = Scene.globalPositionAt(entry#nodePath, scene);
-            let bbox = makeBBox(globalPos, entry);
-            if (Rect2.hasPoint(mousePos, bbox)) Some((entry, globalPos))
-            else None
-        });
-        let folded = List.foldLeft((best, hit) -> match hit {
-            case (entry, _) =>
-                let curZ = Scene.effectiveZIndexAt(entry#nodePath, scene);
-                match best {
-                    case None => Some((curZ, hit))
-                    case Some((bestZ, _)) =>
-                        if (curZ >= bestZ) Some((curZ, hit))
-                        else best
-                }
-        }, None, hits);
-        match folded {
-            case None         => None
-            case Some((_, h)) => Some(h)
-        }
+        entries
+            |> List.filterMap(entry -> hitInfo(mousePos, entry, scene))
+            |> highestZ
+            |> Option.map(hit -> (hit#entry, hit#globalPos))
+
+    /// 1 件分のヒット情報。z は `Scene.effectiveZIndexAt` の値（fold 中で再計算しないよう
+    /// 事前に詰めておく）
+    type alias HitInfo = {
+        z = Int32,
+        entry = EditableNode.EditableEntry,
+        globalPos = Vec2.Vec2
+    }
+
+    /// マウスが entry の bbox 内なら HitInfo を返す
+    def hitInfo(mousePos: Vec2.Vec2, entry: EditableNode.EditableEntry,
+                scene: Scene[NodeTag]): Option[HitInfo] =
+        let globalPos = Scene.globalPositionAt(entry#nodePath, scene);
+        if (Rect2.hasPoint(mousePos, makeBBox(globalPos, entry)))
+            Some({z = Scene.effectiveZIndexAt(entry#nodePath, scene),
+                  entry = entry, globalPos = globalPos})
+        else None
+
+    /// hits の中から z 最大を返す。同値時は後発（preorder で後）を優先するため `>=` 比較
+    def highestZ(hits: List[HitInfo]): Option[HitInfo] =
+        List.foldLeft((best, cand) ->
+            match best {
+                case None    => Some(cand)
+                case Some(b) => if (cand#z >= b#z) Some(cand) else best
+            }, None, hits)
 
     /// グローバル位置と EditableEntry から表示矩形 Rect2 を作る
     pub def makeBBox(refPos: Vec2.Vec2,

@@ -65,22 +65,21 @@ mod Editor {
         let mousePos = GameEngine.Game.getMousePosition();
         // F1 のエッジ検出: 前フレーム未押下 → 今フレーム押下 でトグル
         let toggledOn = if (f1 and not stateData#prevF1) not stateData#on else stateData#on;
-        let stateAfterToggle = {
-            on = toggledOn,
-            selected = if (toggledOn) stateData#selected else None,
-            dragOrigin = if (toggledOn) stateData#dragOrigin else None,
-            nodeOrigin = if (toggledOn) stateData#nodeOrigin else None,
-            prevF1 = f1,
-            prevMouseLeft = stateData#prevMouseLeft,
-            rootJsonIndex = stateData#rootJsonIndex
-        };
+        // OFF へ倒れたフレームは選択 / ドラッグ状態をクリアする。
+        // ON 中（または ON のまま）は既存の選択 / ドラッグ状態を維持
+        let stateAfterToggle = if (toggledOn)
+            {on = true, prevF1 = f1 | stateData}
+        else
+            {on = false, selected = None, dragOrigin = None, nodeOrigin = None,
+             prevF1 = f1 | stateData};
         if (not toggledOn) {
             EditorState.put({prevMouseLeft = mouseLeft | stateAfterToggle});
             scene
         } else {
             // エディタ ON 時のマウス処理
+            let mouse = {pos = mousePos, leftDown = mouseLeft};
             let (newState, newScene) =
-                DragInput.handleMouse(mousePos, mouseLeft, stateAfterToggle, scene);
+                DragInput.handleMouse(mouse, stateAfterToggle, scene);
             EditorState.put({prevMouseLeft = mouseLeft | newState});
             newScene
         }

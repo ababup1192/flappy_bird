@@ -54,7 +54,7 @@ mod TestEditableNode {
         let scene = s |> Scene.addNode("hero",
             EngineNode.Sprite2DWithState(sprite, NodeTag.NoTag));
         let index = Map#{"hero" => "test/Hero.scene.json"};
-        let entries = EditableNode.collectAll(index, scene);
+        let entries = EditableNode.collectAll({rootJsonIndex = index, scene = scene});
         Assert.assertEq(
             expected = (1, "hero" :: Nil, 32.0, 32.0, -16.0, -16.0),
             (List.length(entries),
@@ -74,7 +74,8 @@ mod TestEditableNode {
         let s: Scene[NodeTag] = Scene.empty();
         let scene = s |> Scene.addNode("a",
             EngineNode.Sprite2DWithState(sprite, NodeTag.NoTag));
-        let entries = EditableNode.collectAll(Map#{"a" => "x.json"}, scene);
+        let entries = EditableNode.collectAll(
+            {rootJsonIndex = Map#{"a" => "x.json"}, scene = scene});
         Assert.assertEq(
             expected = (Some(20.0), Some(30.0)),  // 10 * 2 = 20, 10 * 3 = 30
             (List.head(entries) |> Option.map(e -> e#width),
@@ -99,7 +100,7 @@ mod TestEditableNode {
             |> Scene.addNode("button", EngineNode.TextureButtonWithState(btn, NodeTag.NoTag));
         let index = Map#{"layer" => "x.json", "sprite" => "x.json",
                          "rect" => "x.json", "button" => "x.json"};
-        let entries = EditableNode.collectAll(index, scene);
+        let entries = EditableNode.collectAll({rootJsonIndex = index, scene = scene});
         let paths = List.map(e -> e#nodePath, entries) |> List.sortBy(p -> List.head(p));
         Assert.assertEq(
             expected = ("button" :: Nil) :: ("sprite" :: Nil) :: Nil,
@@ -119,7 +120,7 @@ mod TestEditableNode {
             |> Scene.addNode("unknown", EngineNode.Sprite2DWithState(s2, NodeTag.NoTag));
         // unknown root は index に入れない
         let index = Map#{"known" => "x.json"};
-        let entries = EditableNode.collectAll(index, scene);
+        let entries = EditableNode.collectAll({rootJsonIndex = index, scene = scene});
         let paths = List.map(e -> e#nodePath, entries);
         Assert.assertEq(expected = ("known" :: Nil) :: Nil, paths)
 
@@ -140,7 +141,8 @@ mod TestEditableNode {
             |> Scene.addNode("a", EngineNode.Sprite2DWithState(sa, NodeTag.NoTag))
             |> Scene.addNode("b", EngineNode.Sprite2DWithState(sb, NodeTag.NoTag));
         let index = Map#{"a" => "x.json", "b" => "x.json"};
-        let result = EditableNode.findByNodePath(index, "b" :: Nil, scene);
+        let result = EditableNode.findByNodePath(
+            {rootJsonIndex = index, scene = scene}, "b" :: Nil);
         Assert.assertEq(
             expected = Some("b" :: Nil),
             result |> Option.map(e -> e#nodePath))
@@ -155,7 +157,8 @@ mod TestEditableNode {
         let s: Scene[NodeTag] = Scene.empty();
         let scene = s |> Scene.addNode("a", EngineNode.Sprite2DWithState(sa, NodeTag.NoTag));
         let index = Map#{"a" => "x.json"};
-        let result = EditableNode.findByNodePath(index, "zzz" :: Nil, scene);
+        let result = EditableNode.findByNodePath(
+            {rootJsonIndex = index, scene = scene}, "zzz" :: Nil);
         Assert.assertEq(expected = true, Option.isEmpty(result))
 
     @Test

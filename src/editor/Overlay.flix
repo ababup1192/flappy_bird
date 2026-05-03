@@ -29,30 +29,40 @@ mod Overlay {
         match selected {
             case None => scene
             case Some((_, nodePath)) =>
-                match EditableNode.findByNodePath(rootJsonIndex, nodePath, scene) {
+                let ctx = {rootJsonIndex = rootJsonIndex, scene = scene};
+                match EditableNode.findByNodePath(ctx, nodePath) {
                     case None => scene
                     case Some(entry) =>
                         let refPos = Scene.globalPositionAt(nodePath, scene);
                         let topLeft = Vec2.add(refPos, entry#topLeftOffset);
-                        addBoxLines(topLeft, entry#width, entry#height, scene)
+                        let box = {topLeft = topLeft,
+                                   size = {x = entry#width, y = entry#height}};
+                        addBoxLines(box, scene)
                 }
         }
 
     /// 矩形の 4 辺を CanvasLayer の中に細い ColorRect として配置する。
     /// 各辺は 2px の太さ。色は明るい黄色で目立たせる
-    def addBoxLines(topLeft: Vec2.Vec2, width: Float64, height: Float64,
+    def addBoxLines(box: {topLeft = Vec2.Vec2, size = Vec2.Vec2},
                     scene: Scene[NodeTag]): Scene[NodeTag] =
         let layerName = "_editor_box_layer";
         let layer = CanvasLayer.make(overlayLayerIndex());
         let yellow: {r = Float32, g = Float32, b = Float32} =
             {r = 1.0f32, g = 0.85f32, b = 0.2f32};
         let thickness = 2.0;
-        let topLine = makeLine(topLeft, width, thickness, yellow);
-        let bottomLine = makeLine({x = topLeft#x, y = topLeft#y + height - thickness},
-                                  width, thickness, yellow);
-        let leftLine = makeLine(topLeft, thickness, height, yellow);
-        let rightLine = makeLine({x = topLeft#x + width - thickness, y = topLeft#y},
-                                 thickness, height, yellow);
+        let topLeft = box#topLeft;
+        let width = box#size#x;
+        let height = box#size#y;
+        let topLine = makeLine({pos = topLeft,
+                                size = {x = width, y = thickness}}, yellow);
+        let bottomLine = makeLine({pos = {x = topLeft#x,
+                                          y = topLeft#y + height - thickness},
+                                   size = {x = width, y = thickness}}, yellow);
+        let leftLine = makeLine({pos = topLeft,
+                                 size = {x = thickness, y = height}}, yellow);
+        let rightLine = makeLine({pos = {x = topLeft#x + width - thickness,
+                                         y = topLeft#y},
+                                  size = {x = thickness, y = height}}, yellow);
         scene
             |> Scene.addNode(layerName,
                 EngineNode.CanvasLayerWithState(layer, NodeTag.NoTag))
@@ -66,10 +76,10 @@ mod Overlay {
                 EngineNode.ColorRectWithState(rightLine, NodeTag.NoTag))
 
     /// 1 本の線分を ColorRect で作る
-    def makeLine(pos: Vec2.Vec2, width: Float64, height: Float64,
+    def makeLine(line: {pos = Vec2.Vec2, size = Vec2.Vec2},
                  color: {r = Float32, g = Float32, b = Float32}): ColorRect =
-        ColorRect.make({x = width, y = height}, color)
-            |> Node2D.setPosition(pos)
+        ColorRect.make(line#size, color)
+            |> Node2D.setPosition(line#pos)
 
     /// オーバーレイ用 CanvasLayer のレイヤー番号（既存の最前面 layer=2 より大きく取る）
     def overlayLayerIndex(): Int32 = 999

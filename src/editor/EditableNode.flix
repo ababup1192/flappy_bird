@@ -9,6 +9,14 @@
 
 mod EditableNode {
 
+    /// シーン上のノードを「編集対象として扱える形」で問い合わせるための文脈。
+    /// `rootJsonIndex` と `scene` は collectAll / findByNodePath / buildEntry で
+    /// 常にセットで使うため、レコードにまとめて 1 引数として渡す
+    pub type alias LookupCtx = {
+        rootJsonIndex = Map[NodeName, String],
+        scene = Scene[NodeTag]
+    }
+
     /// 編集対象ノードの 1 件分の情報。
     /// jsonPath: 書き戻し対象の scene.json ファイルパス
     /// nodePath: シーン内の階層パス
@@ -26,21 +34,15 @@ mod EditableNode {
 
     /// シーン全体を走査して編集対象ノードを抽出する。
     /// rootJsonIndex に登録されていないルートのノードは除外される
-    pub def collectAll(rootJsonIndex: Map[NodeName, String], scene: Scene[NodeTag]):
-            List[EditableEntry] \ GameEngine.Game =
-        Scene.preorderPaths(scene)
-            |> List.foldLeft((acc, path) ->
-                match buildEntry(rootJsonIndex, path, scene) {
-                    case Some(entry) => List.append(acc, entry :: Nil)
-                    case None        => acc
-                }, Nil)
+    pub def collectAll(ctx: LookupCtx): List[EditableEntry] \ GameEngine.Game =
+        Scene.preorderPaths(ctx#scene)
+            |> List.filterMap(path -> buildEntry(ctx, path))
 
-    /// 走査結果から指定 NodePath の entry を 1 件取り出す
-    pub def findByNodePath(rootJsonIndex: Map[NodeName, String], nodePath: NodePath,
-                           scene: Scene[NodeTag]):
+    /// 指定 NodePath の entry を 1 件取り出す。
+    /// 内部的には `buildEntry` を直接呼ぶので、シーン全走査せず O(depth)
+    pub def findByNodePath(ctx: LookupCtx, nodePath: NodePath):
             Option[EditableEntry] \ GameEngine.Game =
-        collectAll(rootJsonIndex, scene)
-            |> List.find(entry -> entry#nodePath == nodePath)
+        buildEntry(ctx, nodePath)
 
     /// Sprite2D / TextureButton の topLeftOffset 計算（中央基準なら半サイズ分マイナス）。
     /// 純粋関数なので単体テストしやすい
@@ -75,49 +77,50 @@ mod EditableNode {
         {size = {x = width, y = height}, topLeftOffset = topLeftOffset}
 
     /// 1 パス分の EditableEntry を構築する。Sprite2D / TextureButton / Label2D 以外は None。
-    /// rootJsonIndex に未登録のルートに属するノードも None
-    def buildEntry(rootJsonIndex: Map[NodeName, String], path: NodePath,
-                   scene: Scene[NodeTag]): Option[EditableEntry] \ GameEngine.Game =
-        match path {
-            case Nil => None
-            case rootName :: _ =>
-                match Map.get(rootName, rootJsonIndex) {
-                    case None => None
-                    case Some(jsonPath) =>
-                        match Scene.getEngineNode(path, scene) {
-                            case None             => None
-                            case Some(engineNode) => rectInfoOf(engineNode)
-                                |> Option.map(rect -> {
-                                    jsonPath = jsonPath,
-                                    nodePath = path,
-                                    width = rect#size#x,
-                                    height = rect#size#y,
-                                    topLeftOffset = rect#topLeftOffset
-                                })
-                        }
-                }
+    /// rootJsonIndex に未登録のルートに属するノードも None。
+    /// forM で「root 名取得 → JSON パス引き → ノード取得 → 矩形計算」の連鎖を平坦に書く
+    def buildEntry(ctx: LookupCtx, path: NodePath):
+            Option[EditableEntry] \ GameEngine.Game =
+        forM (
+            rootName   <- List.head(path);
+            jsonPath   <- Map.get(rootName, ctx#rootJsonIndex);
+            engineNode <- Scene.getEngineNode(path, ctx#scene);
+            rect       <- rectInfoOf(engineNode)
+        ) yield {
+            jsonPath = jsonPath,
+            nodePath = path,
+            width = rect#size#x,
+            height = rect#size#y,
+            topLeftOffset = rect#topLeftOffset
         }
 
-    /// ノードの表示サイズと topLeftOffset を返す（編集対象でなければ None）
+    /// ノードの表示サイズと topLeftOffset を返す（編集対象でなければ None）。
+    /// Sprite2D は texture 情報が登録されていなければ None
     def rectInfoOf(engineNode: EngineNode[NodeTag]):
             Option[{size = Vec2.Vec2, topLeftOffset = Vec2.Vec2}] \ GameEngine.Game =
         match engineNode {
-            case EngineNode.Sprite2DWithState(sprite, _) =>
-                let Sprite2D.Sprite2D(record) = sprite;
-                match GameEngine.Game.getTextureInfo(record#texture) {
-                    case None => None
-                    case Some(info) =>
-                        let size = {x = info#width * record#scale#x,
-                                    y = info#height * record#scale#y};
-                        Some({size = size,
-                              topLeftOffset = boxTopLeftOffset(record#centered, size)})
-                }
-            case EngineNode.TextureButtonWithState(btn, _) =>
-                let size = TextureButton.getSize(btn);
-                Some({size = size,
-                      topLeftOffset = boxTopLeftOffset(TextureButton.isCentered(btn), size)})
-            case EngineNode.Label2DWithState(label, _) =>
-                Some(labelRectInfo(label))
+            case EngineNode.Sprite2DWithState(sprite, _) => spriteRectInfo(sprite)
+            case EngineNode.TextureButtonWithState(btn, _) => Some(buttonRectInfo(btn))
+            case EngineNode.Label2DWithState(label, _) => Some(labelRectInfo(label))
             case _ => None
         }
+
+    /// Sprite2D の矩形情報。texture サイズが未登録のときは None
+    def spriteRectInfo(sprite: Sprite2D):
+            Option[{size = Vec2.Vec2, topLeftOffset = Vec2.Vec2}] \ GameEngine.Game =
+        let Sprite2D.Sprite2D(record) = sprite;
+        GameEngine.Game.getTextureInfo(record#texture)
+            |> Option.map(info -> {
+                let size = {x = info#width * record#scale#x,
+                            y = info#height * record#scale#y};
+                {size = size,
+                 topLeftOffset = boxTopLeftOffset(record#centered, size)}
+            })
+
+    /// TextureButton の矩形情報。size はノード自身が持っている
+    def buttonRectInfo(btn: TextureButton):
+            {size = Vec2.Vec2, topLeftOffset = Vec2.Vec2} =
+        let size = TextureButton.getSize(btn);
+        {size = size,
+         topLeftOffset = boxTopLeftOffset(TextureButton.isCentered(btn), size)}
 }
