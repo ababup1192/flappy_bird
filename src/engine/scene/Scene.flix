@@ -553,6 +553,29 @@ pub mod Scene {
                 drawContextWalk(currentPath, rest, scene, newCtx)
         }
 
+    /// パスのノードがレンダラ上で持つ有効 z-index を返す。
+    /// 祖先の zIndex 累積（zOffset）+ CanvasLayer の layer * layerStride（layerOffset）
+    /// + 自ノードの zIndex で、toDrawables が Drawable に詰める値と同じ計算
+    pub def effectiveZIndexAt(path: NodePath, scene: Scene[s]): Int32 =
+        let ctx = drawContext(path, scene);
+        let nodeZ = match getEngineNode(path, scene) {
+            case Some(engineNode) => CanvasItem.getZIndex(engineNode)
+            case None             => 0
+        };
+        nodeZ + ctx#zOffset + ctx#layerOffset
+
+    /// パスのノードがレンダラ上で実際に描画されるスクリーン座標を返す。
+    /// CanvasLayer 配下のノードはカメラオフセットを受けないので worldPos のまま、
+    /// それ以外（ゲームワールドのノード）は worldPos - cameraOffset。
+    /// toDrawables のスクリーン位置計算と同じロジックで、エディタの当たり判定や
+    /// 選択枠描画位置がレンダラと一致する
+    pub def screenPositionAt(path: NodePath, cameraOffset: Vec2.Vec2,
+                             scene: Scene[s]): Vec2.Vec2 =
+        let worldPos = globalPositionAt(path, scene);
+        let ctx = drawContext(path, scene);
+        if (ctx#underCanvasLayer) worldPos
+        else Vec2.sub(worldPos, cameraOffset)
+
     // ========================================================================
     // 描画（制約なし — EngineNode の Renderable を直接使用）
     // ========================================================================

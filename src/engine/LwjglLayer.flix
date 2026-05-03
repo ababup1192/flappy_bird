@@ -159,17 +159,22 @@ mod LwjglLayer {
     // ========================================================================
 
     def keyToGlfw(key: GameEngine.Key): Int32 = match key {
-        case GameEngine.Key.W     => 87
-        case GameEngine.Key.A     => 65
-        case GameEngine.Key.S     => 83
-        case GameEngine.Key.D     => 68
-        case GameEngine.Key.Up    => 265
-        case GameEngine.Key.Down  => 264
-        case GameEngine.Key.Left  => 263
-        case GameEngine.Key.Right => 262
-        case GameEngine.Key.Enter  => 257
-        case GameEngine.Key.Space  => 32
-        case GameEngine.Key.Escape => 256
+        case GameEngine.Key.W         => 87
+        case GameEngine.Key.A         => 65
+        case GameEngine.Key.S         => 83
+        case GameEngine.Key.D         => 68
+        case GameEngine.Key.Z         => 90
+        case GameEngine.Key.Up        => 265
+        case GameEngine.Key.Down      => 264
+        case GameEngine.Key.Left      => 263
+        case GameEngine.Key.Right     => 262
+        case GameEngine.Key.Enter     => 257
+        case GameEngine.Key.Space     => 32
+        case GameEngine.Key.Escape    => 256
+        case GameEngine.Key.F1        => 290
+        case GameEngine.Key.LeftShift => 340
+        case GameEngine.Key.LeftCtrl  => 341
+        case GameEngine.Key.LeftSuper => 343
     }
 
     // ========================================================================
@@ -180,6 +185,20 @@ mod LwjglLayer {
         case GameEngine.MouseButton.Left   => 0
         case GameEngine.MouseButton.Right  => 1
         case GameEngine.MouseButton.Middle => 2
+    }
+
+    // ========================================================================
+    // Cursor Mapping (GameEngine.Cursor → GLFW standard cursor shape code)
+    // ========================================================================
+    //
+    // GLFW 3.3 系では NWSE / NESW の対角リサイズカーソルが提供されないため、
+    // 4 隅ハンドル用の AllResize には十字カーソル（CROSSHAIR_CURSOR）で代用する
+
+    def cursorShapeToGlfw(cursor: GameEngine.Cursor): Int32 = match cursor {
+        case GameEngine.Cursor.Default   => 0x36001  // GLFW_ARROW_CURSOR
+        case GameEngine.Cursor.HResize   => 0x36005  // GLFW_HRESIZE_CURSOR
+        case GameEngine.Cursor.VResize   => 0x36006  // GLFW_VRESIZE_CURSOR
+        case GameEngine.Cursor.AllResize => 0x36003  // GLFW_CROSSHAIR_CURSOR
     }
 
     // ========================================================================
@@ -572,6 +591,21 @@ mod LwjglLayer {
         // リサイズ中の再描画用に最後のフレームの描画リストを保持する
         let drawablesHolder = Array#{(Nil: List[GameEngine.Drawable])} @ Static;
 
+        // 4 種のスタンダードカーソルを起動時に作成して再利用する。
+        // setCursor 呼び出しの度に都度作成 / 破棄すると重く、リーク源にもなる
+        let arrowCursor = GLFW.glfwCreateStandardCursor(cursorShapeToGlfw(GameEngine.Cursor.Default));
+        let hResizeCursor = GLFW.glfwCreateStandardCursor(cursorShapeToGlfw(GameEngine.Cursor.HResize));
+        let vResizeCursor = GLFW.glfwCreateStandardCursor(cursorShapeToGlfw(GameEngine.Cursor.VResize));
+        let allResizeCursor = GLFW.glfwCreateStandardCursor(cursorShapeToGlfw(GameEngine.Cursor.AllResize));
+        // 同じ Cursor を毎フレーム渡されたときに glfwSetCursor を抑制するためのキャッシュ
+        let lastCursorHolder = Array#{(GameEngine.Cursor.Default: GameEngine.Cursor)} @ Static;
+        let cursorOf = cursor -> match cursor {
+            case GameEngine.Cursor.Default   => arrowCursor
+            case GameEngine.Cursor.HResize   => hResizeCursor
+            case GameEngine.Cursor.VResize   => vResizeCursor
+            case GameEngine.Cursor.AllResize => allResizeCursor
+        };
+
         // macOS ではリサイズ中に glfwPollEvents がブロックされるため、
         // フレームバッファサイズ変更コールバックで再描画を行う
         discard GLFW.glfwSetFramebufferSizeCallback(window, new GLFWFramebufferSizeCallbackI {
@@ -583,23 +617,21 @@ mod LwjglLayer {
         });
 
         let result = run {
-            run {
-                f()
-            } with handler GameEngine.Audio {
-                def playAudio(name, k) = {
-                    match Map.get(name, audioRegistry) {
-                        case Some(src) => AL10.alSourceStop(src); AL10.alSourcePlay(src)
-                        case None      => ()
-                    };
-                    k(())
-                }
-                def stopAudio(name, k) = {
-                    match Map.get(name, audioRegistry) {
-                        case Some(src) => AL10.alSourceStop(src)
-                        case None      => ()
-                    };
-                    k(())
-                }
+            f()
+        } with handler GameEngine.Audio {
+            def playAudio(name, k) = {
+                match Map.get(name, audioRegistry) {
+                    case Some(src) => AL10.alSourceStop(src); AL10.alSourcePlay(src)
+                    case None      => ()
+                };
+                k(())
+            }
+            def stopAudio(name, k) = {
+                match Map.get(name, audioRegistry) {
+                    case Some(src) => AL10.alSourceStop(src)
+                    case None      => ()
+                };
+                k(())
             }
         } with handler GameEngine.Game {
             def render(drawables, k) = {
@@ -664,7 +696,24 @@ mod LwjglLayer {
             def getViewportRect(k) = {
                 k({position = Vec2.zero(), size = {x = screenW, y = screenH}})
             }
+            def getTextureInfo(name, k) = {
+                k(Map.get(name, registry))
+            }
+            def setCursor(cursor, k) = {
+                let prev = Array.get(0, lastCursorHolder);
+                if (prev != cursor) {
+                    GLFW.glfwSetCursor(window, cursorOf(cursor));
+                    Array.put(cursor, 0, lastCursorHolder)
+                } else ();
+                k(())
+            }
         };
+
+        // セッション終了時にカーソルハンドルを開放
+        GLFW.glfwDestroyCursor(arrowCursor);
+        GLFW.glfwDestroyCursor(hResizeCursor);
+        GLFW.glfwDestroyCursor(vResizeCursor);
+        GLFW.glfwDestroyCursor(allResizeCursor);
 
         // OpenAL cleanup
         Map.forEach((_, src) -> AL10.alDeleteSources(src), audioRegistry);

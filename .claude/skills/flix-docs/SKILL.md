@@ -43,6 +43,18 @@ def update(player: Player, scene: Scene): Scene = ...
 - type alias でレコード定義、enum、struct は、全体のコメントと各フィールドの役割のコメントを書くこと
 - 関数の引数にプリミティブな引数が並ぶ場合は、named-parameters と syntax sugar を採用すること
   - https://doc.flix.dev/records.html?highlight=name#named-parameters
+  - 特に **同じ型・似た型が連続するとき**（例: `Float64, Float64`）は取り違えバグの温床になるので必ずレコード化すること
+  - **4 つ以上の引数**で意味の単位が混在しているときも検討する
+  - 一緒に使われ続けるパラメータセットは型エイリアスにして再利用する
+    - 例: `(rootJsonIndex, scene)` → `EditableNode.LookupCtx`、`(mousePos, mouseLeft)` → `DragInput.MouseSnapshot`
+
+```flix
+// NG: Float64 連続 / 4 引数で取り違え危険
+def makeLine(pos: Vec2.Vec2, width: Float64, height: Float64, color: Color): ColorRect
+
+// OK: size を Vec2 にしてレコードで束ねる
+def makeLine(line: {pos = Vec2.Vec2, size = Vec2.Vec2}, color: Color): ColorRect
+```
 
 ### パイプスタイル
 
@@ -97,6 +109,21 @@ def example2(): Unit \ IO =
 ```
 
 - 参考: https://doc.flix.dev/default-handlers.html
+
+- **`run` はネストしないこと** — 複数のエフェクトを 1 ブロックで剥がすときは `run { } with X with Y with Z` の連結構文を使う
+
+```flix
+// NG: run の入れ子
+run {
+    run f() with handler X { ... }
+} with handler Y { ... }
+
+// OK: 1 つの run に with を連結
+run {
+    f()
+} with handler X { ... }
+  with handler Y { ... }
+```
 
 ### ライブラリ選択（Java interop より標準ライブラリを優先）
 

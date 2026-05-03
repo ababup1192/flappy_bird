@@ -80,6 +80,8 @@ def runWithInput(keys: Set[GameEngine.Key],
         def isMouseButtonPressed(btn, k) = k(Set.memberOf(btn, buttons))
         def getFontAtlas(_, _) = bug!("font not used")
         def getViewportRect(k) = k({position = Vec2.zero(), size = {x = 480.0, y = 720.0}})
+        def getTextureInfo(_, k) = k(None)
+        def setCursor(_, k) = k(())
     }
 
 /// 後方互換: 指定キーが押されている GameEngine.Game ハンドラ
@@ -211,9 +213,14 @@ def testHandleInputEmptyPrevState(): Unit \ Assert =
 @Test
 def testAllKeysContainsAll(): Unit \ Assert =
     let keys = GameEngine.allKeys();
-    Assert.assertEq(expected = 11, List.length(keys));
+    Assert.assertEq(expected = 16, List.length(keys));
     Assert.assertTrue(List.memberOf(GameEngine.Key.W, keys));
-    Assert.assertTrue(List.memberOf(GameEngine.Key.Escape, keys))
+    Assert.assertTrue(List.memberOf(GameEngine.Key.Escape, keys));
+    Assert.assertTrue(List.memberOf(GameEngine.Key.F1, keys));
+    Assert.assertTrue(List.memberOf(GameEngine.Key.LeftShift, keys));
+    Assert.assertTrue(List.memberOf(GameEngine.Key.Z, keys));
+    Assert.assertTrue(List.memberOf(GameEngine.Key.LeftCtrl, keys));
+    Assert.assertTrue(List.memberOf(GameEngine.Key.LeftSuper, keys))
 
 // ========================================================================
 // currentMouseButtons / allMouseButtons

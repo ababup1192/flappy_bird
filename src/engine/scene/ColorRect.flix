@@ -16,12 +16,13 @@ pub enum ColorRect {
         visible = Bool,
         zIndex = Int32,
         modulate = Color,
+        alpha = Float32,
         size = Vec2.Vec2
     })
 }
 
 mod ColorRect {
-    /// デフォルト値で ColorRect を生成する
+    /// デフォルト値で ColorRect を生成する（alpha は 1.0 = 不透明）
     pub def make(size: Vec2.Vec2, color: Color): ColorRect =
         ColorRect.ColorRect({
             position = {x = 0.0, y = 0.0},
@@ -31,8 +32,14 @@ mod ColorRect {
             visible = true,
             zIndex = 0,
             modulate = color,
+            alpha = 1.0f32,
             size = size
         })
+
+    /// alpha を設定する
+    pub def setAlpha(alpha: Float32, rect: ColorRect): ColorRect =
+        let ColorRect.ColorRect(r) = rect;
+        ColorRect.ColorRect({ alpha = alpha | r })
 
     /// Drawable に変換する（texture="" でテクスチャなしを示す）
     pub def toDrawable(rect: ColorRect, globalPos: Vec2.Vec2): GameEngine.Drawable =
@@ -43,7 +50,7 @@ mod ColorRect {
             scale = r#size,
             rotation = r#rotation,
             color = r#modulate,
-            alpha = 1.0f32,
+            alpha = r#alpha,
             centered = false,
             uvOffset = {x = 0.0, y = 0.0},
             uvScale = {x = 1.0, y = 1.0},

@@ -65,6 +65,7 @@ mod GameEngine {
         case A
         case S
         case D
+        case Z
         case Up
         case Down
         case Left
@@ -72,14 +73,19 @@ mod GameEngine {
         case Enter
         case Space
         case Escape
+        case F1
+        case LeftShift
+        case LeftCtrl
+        case LeftSuper
     }
 
     /// Key の全バリアント。InputEvent などのイベント駆動入力で
     /// 走査対象として使う。新しい Key を追加した際はここにも追加する。
     pub def allKeys(): List[Key] =
-        Key.W :: Key.A :: Key.S :: Key.D ::
+        Key.W :: Key.A :: Key.S :: Key.D :: Key.Z ::
         Key.Up :: Key.Down :: Key.Left :: Key.Right ::
-        Key.Enter :: Key.Space :: Key.Escape :: Nil
+        Key.Enter :: Key.Space :: Key.Escape :: Key.F1 ::
+        Key.LeftShift :: Key.LeftCtrl :: Key.LeftSuper :: Nil
 
     /// マウスボタン
     pub enum MouseButton with Eq, Order, ToString {
@@ -93,7 +99,22 @@ mod GameEngine {
     pub def allMouseButtons(): List[MouseButton] =
         MouseButton.Left :: MouseButton.Right :: MouseButton.Middle :: Nil
 
-    /// ゲームエフェクト: 描画・ウィンドウ制御・時間取得・キー入力・マウス入力・フォント・ビューポート
+    /// マウスカーソル形状（エディタのリサイズハンドルなどで切り替える）。
+    /// GLFW 3.3.4 が提供する 6 種のうち、エディタで意味があるものだけ列挙する
+    pub enum Cursor with Eq, ToString {
+        /// 通常の矢印カーソル（エディタ非操作中・ハンドル外）
+        case Default
+        /// 横方向の伸縮カーソル ←→（左右辺ハンドル）
+        case HResize
+        /// 縦方向の伸縮カーソル ↕（上下辺ハンドル）
+        case VResize
+        /// 全方向の伸縮カーソル（4 隅ハンドル — GLFW 3.3.4 に diagonal がないため
+        /// 十字カーソルで代用する）
+        case AllResize
+    }
+
+    /// ゲームエフェクト: 描画・ウィンドウ制御・時間取得・キー入力・マウス入力・フォント・
+    /// ビューポート・マウスカーソル形状切り替え
     pub eff Game {
         def render(drawables: List[Drawable]): Unit
         def shouldClose(): Bool
@@ -104,6 +125,11 @@ mod GameEngine {
         def isMouseButtonPressed(button: MouseButton): Bool
         def getFontAtlas(name: String): FontAtlas
         def getViewportRect(): Rect2.Rect2
+        /// 指定したテクスチャ名の元画像サイズ等を取得する。
+        /// 登録されていないテクスチャ名なら None
+        def getTextureInfo(name: String): Option[TextureInfo]
+        /// マウスカーソル形状を切り替える。連続して同じ Cursor を渡しても問題ない（冪等）
+        def setCursor(cursor: Cursor): Unit
     }
 
     /// オーディオエフェクト: サウンドの再生・停止
@@ -119,22 +145,24 @@ mod GameEngine {
     // ========================================================================
     //
     //   let updateScene =
-    //       GameEngine.process(dt, false)
-    //       >> GameEngine.physics(dt, false, gravity)
-    //       >> GameEngine.collisions
-    //       >> GameEngine.offscreen(screenWidth = 480, screenHeight = 720);
+    //       GameEngine.process(delta = dt, paused = false)
+    //       >> GameEngine.physicsProcess(delta = dt, paused = false, gravity = gravity)
+    //       >> GameEngine.handleCollisions
+    //       >> GameEngine.handleScreenTransitions(screenWidth = 480, screenHeight = 720);
     //   GameEngine.render(updateScene(scene));
 
     /// 全ノードの毎フレーム処理を実行する
-    pub def process(delta: Float64, paused: Bool, scene: Scene[s]): Scene[s] \ Node.Aef[s]
-            with Node[s] =
-        Scene.processAll(delta, paused, scene)
-
-    /// 物理演算（重力・ダンピング・速度積分）を適用する
-    pub def physicsProcess(delta: Float64, paused: Bool, gravity: Vec2.Vec2,
+    pub def process(delta: {delta = Float64}, paused: {paused = Bool},
                     scene: Scene[s]): Scene[s] \ Node.Aef[s]
             with Node[s] =
-        PhysicsStep.step(delta, paused, gravity, scene)
+        Scene.processAll(delta#delta, paused#paused, scene)
+
+    /// 物理演算（重力・ダンピング・速度積分）を適用する
+    pub def physicsProcess(delta: {delta = Float64}, paused: {paused = Bool},
+                    gravity: {gravity = Vec2.Vec2},
+                    scene: Scene[s]): Scene[s] \ Node.Aef[s]
+            with Node[s] =
+        PhysicsStep.step(delta#delta, paused#paused, gravity#gravity, scene)
 
     /// 衝突フェーズ: Area2D 重なり検出 → AreaHandler 発火 → RigidBody2D ↔ StaticBody2D 押し戻し
     /// 押し戻しは検出の後に行う（順序を逆にすると境界ピッタリで Area2D 重なりが外れる）
