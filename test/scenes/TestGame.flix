@@ -34,10 +34,10 @@ def withMockAudio(f: Unit -> a \ ef + GameEngine.Audio): a \ ef =
 /// 他のエフェクト（Fs.FileRead など）は呼び出し元へ伝播する
 def withMockAudioAndState(f: Unit -> a \ ef + GameEngine.Audio + BirdStateChanged): a \ ef =
     run {
-        run f() with handler GameEngine.Audio {
-            def playAudio(_, k) = k(())
-            def stopAudio(_, k) = k(())
-        }
+        f()
+    } with handler GameEngine.Audio {
+        def playAudio(_, k) = k(())
+        def stopAudio(_, k) = k(())
     } with handler BirdStateChanged {
         def emit(_, scene, k) = k(scene)
     }

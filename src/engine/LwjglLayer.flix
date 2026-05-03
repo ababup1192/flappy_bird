@@ -584,23 +584,21 @@ mod LwjglLayer {
         });
 
         let result = run {
-            run {
-                f()
-            } with handler GameEngine.Audio {
-                def playAudio(name, k) = {
-                    match Map.get(name, audioRegistry) {
-                        case Some(src) => AL10.alSourceStop(src); AL10.alSourcePlay(src)
-                        case None      => ()
-                    };
-                    k(())
-                }
-                def stopAudio(name, k) = {
-                    match Map.get(name, audioRegistry) {
-                        case Some(src) => AL10.alSourceStop(src)
-                        case None      => ()
-                    };
-                    k(())
-                }
+            f()
+        } with handler GameEngine.Audio {
+            def playAudio(name, k) = {
+                match Map.get(name, audioRegistry) {
+                    case Some(src) => AL10.alSourceStop(src); AL10.alSourcePlay(src)
+                    case None      => ()
+                };
+                k(())
+            }
+            def stopAudio(name, k) = {
+                match Map.get(name, audioRegistry) {
+                    case Some(src) => AL10.alSourceStop(src)
+                    case None      => ()
+                };
+                k(())
             }
         } with handler GameEngine.Game {
             def render(drawables, k) = {
