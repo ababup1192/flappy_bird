@@ -373,9 +373,8 @@ mod Game {
             let nextScene = if (currentPhase != previousPhase or reloadRequested)
                                 applyPhaseChange(currentPhase, fontAtlas, updatedScene)
                             else updatedScene;
-            // エディタオーバーレイを合成して描画する。次フレームには引き継がない
-            let renderedScene = Editor.applyOverlay(fontAtlas, nextScene);
-            GameEngine.render(renderedScene);
+            // エディタオーバーレイを合成して描画。オーバーレイは次フレームに引き継がない
+            GameEngine.render(Editor.applyOverlay(fontAtlas, nextScene));
             gameLoop(fontAtlas, currentPhase, nextScene)
         }
 }
