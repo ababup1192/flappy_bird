@@ -81,6 +81,7 @@ def runWithInput(keys: Set[GameEngine.Key],
         def getFontAtlas(_, _) = bug!("font not used")
         def getViewportRect(k) = k({position = Vec2.zero(), size = {x = 480.0, y = 720.0}})
         def getTextureInfo(_, k) = k(None)
+        def setCursor(_, k) = k(())
     }
 
 /// 後方互換: 指定キーが押されている GameEngine.Game ハンドラ

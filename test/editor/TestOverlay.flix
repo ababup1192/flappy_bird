@@ -29,6 +29,7 @@ mod TestOverlay {
             def getFontAtlas(_, _) = bug!("font not used")
             def getViewportRect(k) = k({position = {x = 0.0, y = 0.0}, size = {x = 480.0, y = 720.0}})
             def getTextureInfo(_, k) = k(Some({id = 0i32, width = 32.0, height = 32.0}))
+            def setCursor(_, k) = k(())
         }
 
     // ====================================================================

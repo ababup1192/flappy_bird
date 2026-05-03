@@ -1,8 +1,8 @@
 // EditHistory — エディタ編集の履歴を保持し、Cmd+Z で巻き戻す仕組み
 //
-// algebraic effect として `Rewind` を切り出し、各編集箇所（ドラッグドロップ・矢印 nudge）が
-// 直前の状態を `save` する。Cmd+Z 押下時に `rewind` で取り出して、ノードを記録された位置に
-// 戻して JSON にも書き戻す。
+// algebraic effect として `Rewind` を切り出し、各編集箇所（ドラッグドロップ・矢印 nudge・
+// リサイズハンドルドラッグ）が直前の状態を `save` する。Cmd+Z 押下時に `rewind` で
+// 取り出して、ノードを記録された状態（位置 / スケール）に戻して JSON にも書き戻す。
 //
 // `withRewind` ハンドラは Region 上の `Ref[List[Entry], r]` で履歴を保持する。
 // Flix 公式 examples の backtracking パターン（save/rewind 命名と handler-with-Ref/MutMap）
@@ -11,14 +11,15 @@
 
 mod EditHistory {
 
-    /// 1 編集の巻き戻し情報。
-    /// jsonPath:     書き戻し先の scene.json
-    /// nodePath:     対象ノード
-    /// prevWorldPos: 編集前のワールド座標（ここに戻せば直前の状態に復元される）
-    pub type alias Entry = {
-        jsonPath = String,
-        nodePath = NodePath,
-        prevWorldPos = Vec2.Vec2
+    /// 1 編集の巻き戻し情報。位置だけが変わったか、スケール（と位置）が変わったかで分岐する
+    pub enum Entry {
+        /// 位置のみ変更されたときの巻き戻し情報
+        case MoveEntry({jsonPath = String, nodePath = NodePath,
+                        prevWorldPos = Vec2.Vec2})
+        /// スケール（と付随する位置）変更の巻き戻し情報。
+        /// リサイズではアンカーを保つため位置も同時に動くので、両方を記録する
+        case ScaleEntry({jsonPath = String, nodePath = NodePath,
+                         prevWorldPos = Vec2.Vec2, prevScale = Vec2.Vec2})
     }
 
     /// 編集履歴 stack を扱うエフェクト。

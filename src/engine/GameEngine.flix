@@ -99,7 +99,22 @@ mod GameEngine {
     pub def allMouseButtons(): List[MouseButton] =
         MouseButton.Left :: MouseButton.Right :: MouseButton.Middle :: Nil
 
-    /// ゲームエフェクト: 描画・ウィンドウ制御・時間取得・キー入力・マウス入力・フォント・ビューポート
+    /// マウスカーソル形状（エディタのリサイズハンドルなどで切り替える）。
+    /// GLFW 3.3.4 が提供する 6 種のうち、エディタで意味があるものだけ列挙する
+    pub enum Cursor with Eq, ToString {
+        /// 通常の矢印カーソル（エディタ非操作中・ハンドル外）
+        case Default
+        /// 横方向の伸縮カーソル ←→（左右辺ハンドル）
+        case HResize
+        /// 縦方向の伸縮カーソル ↕（上下辺ハンドル）
+        case VResize
+        /// 全方向の伸縮カーソル（4 隅ハンドル — GLFW 3.3.4 に diagonal がないため
+        /// 十字カーソルで代用する）
+        case AllResize
+    }
+
+    /// ゲームエフェクト: 描画・ウィンドウ制御・時間取得・キー入力・マウス入力・フォント・
+    /// ビューポート・マウスカーソル形状切り替え
     pub eff Game {
         def render(drawables: List[Drawable]): Unit
         def shouldClose(): Bool
@@ -113,6 +128,8 @@ mod GameEngine {
         /// 指定したテクスチャ名の元画像サイズ等を取得する。
         /// 登録されていないテクスチャ名なら None
         def getTextureInfo(name: String): Option[TextureInfo]
+        /// マウスカーソル形状を切り替える。連続して同じ Cursor を渡しても問題ない（冪等）
+        def setCursor(cursor: Cursor): Unit
     }
 
     /// オーディオエフェクト: サウンドの再生・停止

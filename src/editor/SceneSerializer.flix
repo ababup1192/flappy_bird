@@ -1,7 +1,7 @@
-// SceneSerializer — scene.json の特定ノードの "pos" フィールドだけを書き戻す
+// SceneSerializer — scene.json の特定ノードのフィールド（"pos" / "scale" など）を書き戻す
 //
 // 全 Scene を JSON にシリアライズし直すのではなく、ファイルから JSON を再パースし、
-// 指定 NodePath を辿って当該ノードの "pos" を新しい [x, y] に置き換えてから書き戻す。
+// 指定 NodePath を辿って当該ノードの該当フィールドだけを書き換えてから書き戻す。
 // この方針なら NodeTag や状態を持つノード（Bird など）の特殊扱いを考えなくて済む。
 //
 // 対応するルート JSON 形:
@@ -17,20 +17,42 @@ mod SceneSerializer {
     use Json.JsonElement
     use Json.JsonElement.{JsonObject, JsonArray, JsonNumber}
 
+    /// 書き換え対象 1 件: フィールド名 + 上書きする Vec2 値（[x, y] として書き出す）
+    pub type alias FieldUpdate = {key = String, value = Vec2.Vec2}
+
     // ========================================================================
     // 公開 API
     // ========================================================================
 
-    /// 指定 JSON ファイルの NodePath にあるノードの "pos" を newPos で上書きして書き戻す。
-    /// 失敗時は bug! でクラッシュする（エディタ操作で起きるなら開発時に潰すべき）。
+    /// 指定 JSON ファイルの NodePath にあるノードの "pos" を newPos で上書きして書き戻す
     pub def updatePos(jsonPath: String, nodePath: NodePath, newPos: Vec2.Vec2):
+            Unit \ {Fs.FileRead, Fs.FileWrite} =
+        updateFields(jsonPath, nodePath, {key = "pos", value = newPos} :: Nil)
+
+    /// 指定 JSON ファイルの NodePath にあるノードの "scale" を newScale で上書きして書き戻す
+    pub def updateScale(jsonPath: String, nodePath: NodePath, newScale: Vec2.Vec2):
+            Unit \ {Fs.FileRead, Fs.FileWrite} =
+        updateFields(jsonPath, nodePath, {key = "scale", value = newScale} :: Nil)
+
+    /// "pos" と "scale" を同時に上書きする（マウスドラッグでのリサイズ書き戻しで利用）
+    pub def updatePosAndScale(jsonPath: String, nodePath: NodePath,
+                              newPos: Vec2.Vec2, newScale: Vec2.Vec2):
+            Unit \ {Fs.FileRead, Fs.FileWrite} =
+        updateFields(jsonPath, nodePath,
+            {key = "pos", value = newPos} ::
+            {key = "scale", value = newScale} :: Nil)
+
+    /// 指定 JSON ファイルの NodePath にあるノードに対し、複数フィールドを一括で上書きする。
+    /// 失敗時は bug! でクラッシュする（エディタ操作で起きるなら開発時に潰すべき）
+    pub def updateFields(jsonPath: String, nodePath: NodePath,
+                         updates: List[FieldUpdate]):
             Unit \ {Fs.FileRead, Fs.FileWrite} =
         let readResult = run { Fs.ReadFile.read(jsonPath) } with Fs.ReadFile.runWithFileRead;
         let textResult = readResult |> Result.mapErr(error -> "read failed: ${error}");
         let updated = forM (
             text     <- textResult;
             json     <- Json.Parse.parse(String.trim(text)) |> Option.toOk("JSON parse failed");
-            replaced <- replacePosAtRoot(nodePath, newPos, json)
+            replaced <- replaceFieldsAtRoot(nodePath, updates, json)
         ) yield replaced;
         match updated {
             case Ok(newJson) =>
@@ -40,9 +62,9 @@ mod SceneSerializer {
                 } with Fs.WriteFile.runWithFileWrite;
                 match writeResult {
                     case Ok(_)    => ()
-                    case Err(error) => bug!("SceneSerializer.updatePos: write failed: ${error}")
+                    case Err(error) => bug!("SceneSerializer.updateFields: write failed: ${error}")
                 }
-            case Err(message) => bug!("SceneSerializer.updatePos: ${jsonPath}: ${message}")
+            case Err(message) => bug!("SceneSerializer.updateFields: ${jsonPath}: ${message}")
         }
 
     // ========================================================================
@@ -50,18 +72,18 @@ mod SceneSerializer {
     // ========================================================================
 
     /// ルート（配列 or オブジェクト）に対して NodePath の先頭名と一致するノードを探し、
-    /// その先のパスで replace を続行する
-    def replacePosAtRoot(nodePath: NodePath, newPos: Vec2.Vec2,
-                         json: JsonElement): Result[String, JsonElement] =
+    /// その先のパスでフィールド更新を続行する
+    def replaceFieldsAtRoot(nodePath: NodePath, updates: List[FieldUpdate],
+                            json: JsonElement): Result[String, JsonElement] =
         match nodePath {
             case Nil => Err("empty NodePath")
             case rootName :: rest =>
                 match json {
                     case JsonObject(_) =>
-                        replacePosInNode(rootName, rest, newPos, json)
+                        replaceFieldsInNode(rootName, rest, updates, json)
                             |> Option.toOk("root node not found: ${rootName}")
                     case JsonArray(arr) =>
-                        replaceInArray(rootName, rest, newPos, arr)
+                        replaceInArray(rootName, rest, updates, arr)
                             |> Option.toOk("root node not found in array: ${rootName}")
                             |> Result.map(JsonArray)
                     case _ =>
@@ -71,23 +93,24 @@ mod SceneSerializer {
 
     /// 配列の各要素を走査し、name が一致するものを置換する。
     /// 一致するものが見つかれば置換した配列を返す。見つからなければ None
-    def replaceInArray(targetName: String, restPath: NodePath, newPos: Vec2.Vec2,
+    def replaceInArray(targetName: String, restPath: NodePath, updates: List[FieldUpdate],
                        arr: Vector[JsonElement]): Option[Vector[JsonElement]] =
         let list = Vector.toList(arr);
         let (found, replaced) = List.foldLeft((acc, element) -> {
             let (foundFlag, accList) = acc;
             if (foundFlag) (true, List.append(accList, element :: Nil))
-            else match replacePosInNode(targetName, restPath, newPos, element) {
+            else match replaceFieldsInNode(targetName, restPath, updates, element) {
                 case Some(newElement) => (true, List.append(accList, newElement :: Nil))
                 case None             => (foundFlag, List.append(accList, element :: Nil))
             }
         }, (false, Nil), list);
         if (found) Some(List.toVector(replaced)) else None
 
-    /// 単一ノード（JsonObject）の "name" を確認し、一致すれば pos を置換する。
+    /// 単一ノード（JsonObject）の "name" を確認し、一致すれば指定フィールドを置換する。
     /// 一致しない場合は None
-    def replacePosInNode(targetName: String, restPath: NodePath, newPos: Vec2.Vec2,
-                         element: JsonElement): Option[JsonElement] =
+    def replaceFieldsInNode(targetName: String, restPath: NodePath,
+                            updates: List[FieldUpdate],
+                            element: JsonElement): Option[JsonElement] =
         match element {
             case JsonObject(map) =>
                 let nameOpt: Option[String] = match Map.get("name", map) {
@@ -96,23 +119,23 @@ mod SceneSerializer {
                 };
                 match nameOpt {
                     case Some(name) if name == targetName =>
-                        Some(applyPathFromHere(restPath, newPos, map))
+                        Some(applyPathFromHere(restPath, updates, map))
                     case _ => None
                 }
             case _ => None
         }
 
     /// 末端ノード（このノードが目的のノードか、子を辿る必要があるか）に応じて
-    /// pos を置換 or children を辿る
-    def applyPathFromHere(restPath: NodePath, newPos: Vec2.Vec2,
+    /// 指定フィールドを置換 or children を辿る
+    def applyPathFromHere(restPath: NodePath, updates: List[FieldUpdate],
                           nodeMap: Map[String, JsonElement]): JsonElement =
         match restPath {
             case Nil =>
-                JsonObject(Map.insert("pos", posToJson(newPos), nodeMap))
+                JsonObject(applyUpdates(updates, nodeMap))
             case nextName :: deeper =>
                 match Map.get("children", nodeMap) {
                     case Some(JsonArray(childArr)) =>
-                        match replaceInArray(nextName, deeper, newPos, childArr) {
+                        match replaceInArray(nextName, deeper, updates, childArr) {
                             case Some(newArr) =>
                                 JsonObject(Map.insert("children", JsonArray(newArr), nodeMap))
                             case None =>
@@ -122,13 +145,20 @@ mod SceneSerializer {
                 }
         }
 
+    /// updates をマージしてノードの Map を返す。フィールドが既に存在しても上書きする
+    def applyUpdates(updates: List[FieldUpdate],
+                     nodeMap: Map[String, JsonElement]): Map[String, JsonElement] =
+        List.foldLeft((acc, update) ->
+            Map.insert(update#key, vec2ToJson(update#value), acc),
+            nodeMap, updates)
+
     /// Vec2.Vec2 を JSON の [x, y] 配列に変換する。
     /// 整数座標は "144" のように整数として書き出すため stripTrailingZeros を通す。
     /// 端数があるときは "144.5" のように小数点付きで書き出される
-    def posToJson(pos: Vec2.Vec2): JsonElement =
+    def vec2ToJson(v: Vec2.Vec2): JsonElement =
         JsonArray(Vector#{
-            JsonNumber(floatToBd(pos#x)),
-            JsonNumber(floatToBd(pos#y))
+            JsonNumber(floatToBd(v#x)),
+            JsonNumber(floatToBd(v#y))
         })
 
     /// Float64 を BigDecimal に変換する。整数値の場合は trailing zero を取り除き

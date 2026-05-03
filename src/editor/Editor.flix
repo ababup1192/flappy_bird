@@ -24,11 +24,23 @@ mod Editor {
         def pollReload(): Bool
     }
 
+    /// リサイズハンドルドラッグ中に保持する、対象ノードのドラッグ開始時スナップショット。
+    /// scale や bbox の更新は「開始時の値 × 倍率」で計算するため、開始値を凍結しておく
+    pub type alias ResizeOrigin = {
+        handle = ResizeHandle.Handle,
+        boxTopLeftScreen = Vec2.Vec2,    // ドラッグ開始時の bbox 左上（screen 座標）
+        boxSize = Vec2.Vec2,             // ドラッグ開始時の bbox 表示サイズ
+        scale = Vec2.Vec2,               // ドラッグ開始時のノードの scale
+        worldPos = Vec2.Vec2,            // ドラッグ開始時のノード global 座標
+        topLeftOffset = Vec2.Vec2        // 中央寄せ補正分（centered=true なら -size/2 など）
+    }
+
     /// エディタ状態の record 表現
     /// on:             エディタモード ON / OFF
     /// selected:       現在選択中のノード（編集対象 JSON のパスとシーン内の NodePath）
     /// dragOrigin:     ドラッグ開始時のマウス座標（None ならドラッグ中ではない）
     /// nodeOrigin:     ドラッグ開始時のノードのグローバル座標
+    /// resizeOrigin:   リサイズハンドルドラッグ中の開始時スナップショット
     /// prevF1:         前フレームの F1 押下状態（エッジ検出用）
     /// prevMouseLeft:  前フレームのマウス左ボタン押下状態（エッジ検出用）
     /// prevArrowKeys:  前フレームの矢印キー押下状態（KeyboardNudge のエッジ検出用）
@@ -40,6 +52,7 @@ mod Editor {
         selected = Option[(String, NodePath)],
         dragOrigin = Option[Vec2.Vec2],
         nodeOrigin = Option[Vec2.Vec2],
+        resizeOrigin = Option[ResizeOrigin],
         prevF1 = Bool,
         prevMouseLeft = Bool,
         prevArrowKeys = KeyboardNudge.ArrowKeys,
@@ -53,6 +66,7 @@ mod Editor {
         selected = None,
         dragOrigin = None,
         nodeOrigin = None,
+        resizeOrigin = None,
         prevF1 = false,
         prevMouseLeft = false,
         prevArrowKeys = KeyboardNudge.initialPrev(),
@@ -125,8 +139,10 @@ mod Editor {
             {on = true, prevF1 = f1 | stateData}
         else
             {on = false, selected = None, dragOrigin = None, nodeOrigin = None,
-             prevF1 = f1 | stateData};
+             resizeOrigin = None, prevF1 = f1 | stateData};
         if (not toggledOn) {
+            // エディタ OFF へ倒れた / 元から OFF のフレームではカーソルを通常に戻す
+            GameEngine.Game.setCursor(GameEngine.Cursor.Default);
             EditorState.put({prevMouseLeft = mouseLeft,
                              prevArrowKeys = curArrows,
                              prevZ = zNow | stateAfterToggle});
@@ -148,19 +164,69 @@ mod Editor {
                 applyUndo(nudgedScene)
             else
                 nudgedScene;
+            // ハンドル hover / リサイズ中ならリサイズ用カーソル、それ以外は通常カーソル
+            updateCursor(mousePos, cameraOffset, afterMouseState, finalScene);
             EditorState.put({prevMouseLeft = mouseLeft,
                              prevArrowKeys = curArrows,
                              prevZ = zNow | afterMouseState});
             finalScene
         }
 
-    /// Rewind から 1 件取り出してノードを記録された位置に戻し、JSON にも書き戻す。
-    /// 履歴に何もなければ scene 不変
+    /// 現在のリサイズ状態またはマウス hover に応じてカーソル形状を更新する。
+    /// 優先順位: リサイズドラッグ中 > 選択ノードのハンドル hover > Default
+    def updateCursor(mousePos: Vec2.Vec2, cameraOffset: Vec2.Vec2,
+                     stateData: EditorStateData,
+                     scene: Scene[NodeTag]): Unit \ {GameEngine.Game} =
+        let cursor = match stateData#resizeOrigin {
+            case Some(origin) => cursorForHandle(origin#handle)
+            case None         => hoverCursor(mousePos, cameraOffset, stateData, scene)
+        };
+        GameEngine.Game.setCursor(cursor)
+
+    /// 選択中ノードのハンドル領域に hover していればそのハンドル用カーソル、
+    /// 外していれば Default を返す
+    def hoverCursor(mousePos: Vec2.Vec2, cameraOffset: Vec2.Vec2,
+                    stateData: EditorStateData,
+                    scene: Scene[NodeTag]): GameEngine.Cursor \ GameEngine.Game =
+        match stateData#selected {
+            case None => GameEngine.Cursor.Default
+            case Some((_, nodePath)) =>
+                let ctx = {rootJsonIndex = stateData#rootJsonIndex, scene = scene};
+                match EditableNode.findByNodePath(ctx, nodePath) {
+                    case None => GameEngine.Cursor.Default
+                    case Some(entry) =>
+                        let refPos = Scene.screenPositionAt(nodePath, cameraOffset, scene);
+                        let topLeft = Vec2.add(refPos, entry#topLeftOffset);
+                        let box = {topLeft = topLeft,
+                                   size = {x = entry#width, y = entry#height}};
+                        match ResizeHandle.hitTest(mousePos, box) {
+                            case None         => GameEngine.Cursor.Default
+                            case Some(handle) => cursorForHandle(handle)
+                        }
+                }
+        }
+
+    /// ハンドル方向に対応するカーソル形状を返す。
+    /// GLFW 3.3 系には対角リサイズカーソルがないので、4 隅は AllResize（CROSSHAIR）で代用
+    def cursorForHandle(handle: ResizeHandle.Handle): GameEngine.Cursor =
+        match handle {
+            case ResizeHandle.Handle.Top         => GameEngine.Cursor.VResize
+            case ResizeHandle.Handle.Bottom      => GameEngine.Cursor.VResize
+            case ResizeHandle.Handle.Left        => GameEngine.Cursor.HResize
+            case ResizeHandle.Handle.Right       => GameEngine.Cursor.HResize
+            case ResizeHandle.Handle.TopLeft     => GameEngine.Cursor.AllResize
+            case ResizeHandle.Handle.TopRight    => GameEngine.Cursor.AllResize
+            case ResizeHandle.Handle.BottomLeft  => GameEngine.Cursor.AllResize
+            case ResizeHandle.Handle.BottomRight => GameEngine.Cursor.AllResize
+        }
+
+    /// Rewind から 1 件取り出してノードを記録された状態（位置 / スケール）に戻し、
+    /// JSON にも書き戻す。履歴に何もなければ scene 不変
     def applyUndo(scene: Scene[NodeTag]):
             Scene[NodeTag] \ {EditHistory.Rewind, Fs.FileRead, Fs.FileWrite} =
         match EditHistory.Rewind.rewind() {
             case None => scene
-            case Some(entry) =>
+            case Some(EditHistory.Entry.MoveEntry(entry)) =>
                 let restored = Scene.setGlobalPositionAt(
                     entry#nodePath, entry#prevWorldPos, scene);
                 // 復元位置を JSON にも書き戻す（ここでは save しない = stack に積まない）
@@ -169,6 +235,21 @@ mod Editor {
                     case None             => Vec2.zero()
                 };
                 SceneSerializer.updatePos(entry#jsonPath, entry#nodePath, localPos);
+                restored
+            case Some(EditHistory.Entry.ScaleEntry(entry)) =>
+                // スケール復元 → 位置復元 の順。位置はローカル座標を再計算するため
+                // scale 復元後のシーンを基準にする（centered=true なら親座標は無依存だが、
+                // CanvasLayer 配下のオフセット計算に影響しないよう順序を固定する）
+                let scaled = Scene.mapEngineNode(entry#nodePath,
+                    Node2D.setScale(entry#prevScale), scene);
+                let restored = Scene.setGlobalPositionAt(
+                    entry#nodePath, entry#prevWorldPos, scaled);
+                let localPos = match Scene.getEngineNode(entry#nodePath, restored) {
+                    case Some(engineNode) => Node2D.getPosition(engineNode)
+                    case None             => Vec2.zero()
+                };
+                SceneSerializer.updatePosAndScale(entry#jsonPath, entry#nodePath,
+                                                   localPos, entry#prevScale);
                 restored
         }
 

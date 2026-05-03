@@ -30,6 +30,7 @@ mod Overlay {
     }
 
     /// 選択中ノードを取り囲む黄色の矩形（4 辺の細い ColorRect）を最前面に追加する。
+    /// さらに 8 個のリサイズハンドル（4 隅 + 4 辺）を選択枠の上に重ねる。
     /// 選択 entry をシーン走査で再取得して、ノードが描画されている screen 座標に枠を置く
     /// （オーバーレイ自体が CanvasLayer なのでカメラの影響を受けず、screen 座標 = 描画位置）
     pub def addSelectionBox(rootJsonIndex: Map[NodeName, String],
@@ -47,9 +48,33 @@ mod Overlay {
                         let topLeft = Vec2.add(refPos, entry#topLeftOffset);
                         let box = {topLeft = topLeft,
                                    size = {x = entry#width, y = entry#height}};
-                        addOutline(box, selectionStyle(), scene)
+                        scene
+                            |> addOutline(box, selectionStyle())
+                            |> addResizeHandles(box)
                 }
         }
+
+    /// 選択枠の 8 ハンドルを最前面に置く（選択枠と同じ黄色塗りの 8x8 矩形）。
+    /// 描画はハンドルごとに 1 個の塗り ColorRect を専用 CanvasLayer に置くだけ
+    pub def addResizeHandles(box: {topLeft = Vec2.Vec2, size = Vec2.Vec2},
+                              scene: Scene[NodeTag]): Scene[NodeTag] =
+        let layerName = handleLayerName();
+        let layer = CanvasLayer.make(overlayLayerIndex());
+        let color = selectionStyle()#color;
+        let withLayer = Scene.addNode(layerName,
+            EngineNode.CanvasLayerWithState(layer, NodeTag.NoTag), scene);
+        ResizeHandle.overlayRects(box)
+            |> List.foldLeft((acc, indexed) -> {
+                let (handle, rect) = indexed;
+                let handleTag = "${handle}";
+                let fill = ColorRect.make(rect#size, color)
+                    |> Node2D.setPosition(rect#position);
+                Scene.addChildAt(layerName :: Nil, handleTag,
+                    EngineNode.ColorRectWithState(fill, NodeTag.NoTag), acc)
+            }, withLayer)
+
+    /// ハンドル群を載せる CanvasLayer のノード名（選択枠の layer と分けて衝突回避）
+    def handleLayerName(): String = "_editor_handle_layer"
 
     /// マウス位置の編集対象ノードに薄い枠を描く（重なりが多いシーンで「何がクリック対象か」
     /// を視覚化する）。選択中ノードは選択枠と重なって見えづらくなるためスキップ。
