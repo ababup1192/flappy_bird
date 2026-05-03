@@ -76,7 +76,7 @@ mod TestOverlay {
         let s: Scene[NodeTag] = Scene.empty();
         let scene = s;
         let result = withMockTexture32(() ->
-            Overlay.addSelectionBox(Map.empty(), None, scene));
+            Overlay.addSelectionBox(Map.empty(), None, {x = 0.0, y = 0.0}, scene));
         let boxLayerAbsent = Option.isEmpty(
             Scene.getEngineNode("_editor_box_layer" :: Nil, result));
         Assert.assertEq(expected = true, boxLayerAbsent)
@@ -91,6 +91,7 @@ mod TestOverlay {
         let result = Overlay.addSelectionBox(
             Map.empty(),
             Some(("hero.json", "hero" :: Nil)),
+            {x = 0.0, y = 0.0},
             scene);
         let boxLayerAbsent = Option.isEmpty(
             Scene.getEngineNode("_editor_box_layer" :: Nil, result));
@@ -99,6 +100,80 @@ mod TestOverlay {
     @Test
     def testAddSelectionBoxUnknownRootIsNoOpRunner(): Unit \ Assert =
         withMockTexture32(testAddSelectionBoxUnknownRootIsNoOp)
+
+    // ====================================================================
+    // addHoverBox — マウス位置の編集対象に薄い枠を描く
+    // ====================================================================
+
+    /// マウスがどのノード上にもないなら hover 層は追加されない
+    def testAddHoverBoxNoHitIsNoOp(): Unit \ {Assert, GameEngine.Game} =
+        let sprite = Sprite2D.make("dummy.png", {x = 100.0, y = 100.0}, {x = 1.0, y = 1.0});
+        let s: Scene[NodeTag] = Scene.empty();
+        let scene = s |> Scene.addNode("hero",
+            EngineNode.Sprite2DWithState(sprite, NodeTag.NoTag));
+        let index = Map#{"hero" => "hero.json"};
+        // マウスはスプライト矩形の遥か外
+        let result = Overlay.addHoverBox(index, {x = 500.0, y = 500.0}, None,
+                                         {x = 0.0, y = 0.0}, scene);
+        let hoverLayerAbsent = Option.isEmpty(
+            Scene.getEngineNode("_editor_hover_layer" :: Nil, result));
+        Assert.assertEq(expected = true, hoverLayerAbsent)
+
+    @Test
+    def testAddHoverBoxNoHitIsNoOpRunner(): Unit \ Assert =
+        withMockTexture32(testAddHoverBoxNoHitIsNoOp)
+
+    /// マウスが選択中ノードと同じノードを指しているなら、hover 枠は描かない
+    /// （選択枠と二重描画になるのを避ける）
+    def testAddHoverBoxSkipsWhenSameAsSelected(): Unit \ {Assert, GameEngine.Game} =
+        let sprite = Sprite2D.make("dummy.png", {x = 100.0, y = 100.0}, {x = 1.0, y = 1.0});
+        let s: Scene[NodeTag] = Scene.empty();
+        let scene = s |> Scene.addNode("hero",
+            EngineNode.Sprite2DWithState(sprite, NodeTag.NoTag));
+        let index = Map#{"hero" => "hero.json"};
+        // hero を選択中、マウスも hero の上
+        let result = Overlay.addHoverBox(
+            index,
+            {x = 100.0, y = 100.0},
+            Some(("hero.json", "hero" :: Nil)),
+            {x = 0.0, y = 0.0},
+            scene);
+        let hoverLayerAbsent = Option.isEmpty(
+            Scene.getEngineNode("_editor_hover_layer" :: Nil, result));
+        Assert.assertEq(expected = true, hoverLayerAbsent)
+
+    @Test
+    def testAddHoverBoxSkipsWhenSameAsSelectedRunner(): Unit \ Assert =
+        withMockTexture32(testAddHoverBoxSkipsWhenSameAsSelected)
+
+    /// マウスが選択中ノードと違うノード上なら hover 枠が追加される
+    def testAddHoverBoxAddsLayerWhenDifferent(): Unit \ {Assert, GameEngine.Game} =
+        let heroSprite = Sprite2D.make("dummy.png", {x = 100.0, y = 100.0}, {x = 1.0, y = 1.0});
+        let coinSprite = Sprite2D.make("dummy.png", {x = 200.0, y = 200.0}, {x = 1.0, y = 1.0});
+        let s: Scene[NodeTag] = Scene.empty();
+        let scene = s
+            |> Scene.addNode("hero", EngineNode.Sprite2DWithState(heroSprite, NodeTag.NoTag))
+            |> Scene.addNode("coin", EngineNode.Sprite2DWithState(coinSprite, NodeTag.NoTag));
+        let index = Map#{"hero" => "hero.json", "coin" => "coin.json"};
+        // hero を選択中、マウスは coin 上
+        let result = Overlay.addHoverBox(
+            index,
+            {x = 200.0, y = 200.0},
+            Some(("hero.json", "hero" :: Nil)),
+            {x = 0.0, y = 0.0},
+            scene);
+        let isCanvasLayer = node -> match node {
+            case EngineNode.CanvasLayerWithState(_, _) => true
+            case _ => false
+        };
+        let hoverLayerExists =
+            Scene.getEngineNode("_editor_hover_layer" :: Nil, result)
+                |> Option.exists(isCanvasLayer);
+        Assert.assertEq(expected = true, hoverLayerExists)
+
+    @Test
+    def testAddHoverBoxAddsLayerWhenDifferentRunner(): Unit \ Assert =
+        withMockTexture32(testAddHoverBoxAddsLayerWhenDifferent)
 
     /// 選択中ノードがあれば 4 辺の ColorRect が追加される（top/bottom/left/right）
     def testAddSelectionBoxAddsFourEdges(): Unit \ {Assert, GameEngine.Game} =
@@ -110,6 +185,7 @@ mod TestOverlay {
         let result = Overlay.addSelectionBox(
             index,
             Some(("hero.json", "hero" :: Nil)),
+            {x = 0.0, y = 0.0},
             scene);
         let isColorRect = node -> match node {
             case EngineNode.ColorRectWithState(_, _) => true

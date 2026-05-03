@@ -14,8 +14,11 @@ mod DragInput {
         leftDown = Bool
     }
 
-    /// マウスの押下／継続／離脱を判定し、選択 / ドラッグ更新 / 書き戻し をディスパッチする
+    /// マウスの押下／継続／離脱を判定し、選択 / ドラッグ更新 / 書き戻し をディスパッチする。
+    /// cameraOffset はカメラ追従中のノード（CanvasLayer 配下でないもの）を選択するため
+    /// に必要。Editor.handleInput で `Scene.findActiveCamera` から計算して渡す
     pub def handleMouse(mouse: MouseSnapshot,
+                        cameraOffset: Vec2.Vec2,
                         stateData: Editor.EditorStateData,
                         scene: Scene[NodeTag]):
             (Editor.EditorStateData, Scene[NodeTag]) \
@@ -24,7 +27,7 @@ mod DragInput {
         let pressedNow = mouse#leftDown and not prevLeft;       // 押下したフレーム
         let releasedNow = (not mouse#leftDown) and prevLeft;    // 離した（ドロップ）フレーム
         if (pressedNow) {
-            handleMouseDown(mouse#pos, stateData, scene)
+            handleMouseDown(mouse#pos, cameraOffset, stateData, scene)
         } else if (mouse#leftDown and Option.nonEmpty(stateData#dragOrigin)) {
             // ドラッグ中: 選択ノードの位置を更新（書き戻しはまだしない）
             (stateData, applyDrag(mouse#pos, stateData, scene))
@@ -52,21 +55,25 @@ mod DragInput {
     pub def snapVec2(v: Vec2.Vec2): Vec2.Vec2 =
         {x = Float64.round(v#x), y = Float64.round(v#y)}
 
-    /// クリック押下時: 編集対象ノードのうち hit したものを選択し、ドラッグ開始状態にする
-    def handleMouseDown(mousePos: Vec2.Vec2, stateData: Editor.EditorStateData,
+    /// クリック押下時: 編集対象ノードのうち hit したものを選択し、ドラッグ開始状態にする。
+    /// nodeOrigin にはノードのワールド座標を入れる（applyDrag は delta 加算のみ使うため
+    /// screen と world の差は影響しない）
+    def handleMouseDown(mousePos: Vec2.Vec2, cameraOffset: Vec2.Vec2,
+                        stateData: Editor.EditorStateData,
                         scene: Scene[NodeTag]):
             (Editor.EditorStateData, Scene[NodeTag]) \ GameEngine.Game =
         let ctx = {rootJsonIndex = stateData#rootJsonIndex, scene = scene};
         let entries = EditableNode.collectAll(ctx);
-        let hit = Picking.pickTopAt(mousePos, entries, scene);
+        let hit = Picking.pickTopAt(mousePos, entries, cameraOffset, scene);
         match hit {
             case None =>
                 ({selected = None, dragOrigin = None, nodeOrigin = None | stateData}, scene)
-            case Some((entry, nodeGlobalPos)) =>
+            case Some((entry, _)) =>
+                let nodeWorld = Scene.globalPositionAt(entry#nodePath, scene);
                 let newState = {
                     selected = Some((entry#jsonPath, entry#nodePath)),
                     dragOrigin = Some(mousePos),
-                    nodeOrigin = Some(nodeGlobalPos)
+                    nodeOrigin = Some(nodeWorld)
                     | stateData
                 };
                 (newState, scene)

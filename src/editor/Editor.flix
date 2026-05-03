@@ -108,10 +108,12 @@ mod Editor {
                              prevArrowKeys = curArrows | stateAfterToggle});
             scene
         } else {
-            // エディタ ON 時のマウス処理
+            // エディタ ON 時のマウス処理。カメラ追従中のノード（bird など）も
+            // 正しく当たり判定できるよう cameraOffset を計算して渡す
+            let cameraOffset = activeCameraOffset(scene);
             let mouse = {pos = mousePos, leftDown = mouseLeft};
             let (afterMouseState, afterMouseScene) =
-                DragInput.handleMouse(mouse, stateAfterToggle, scene);
+                DragInput.handleMouse(mouse, cameraOffset, stateAfterToggle, scene);
             // ドラッグ中でなければ矢印キーで微調整できる
             let nudgedScene = if (Option.isEmpty(afterMouseState#dragOrigin))
                 KeyboardNudge.applyNudge(afterMouseState, curArrows, afterMouseScene)
@@ -120,6 +122,17 @@ mod Editor {
             EditorState.put({prevMouseLeft = mouseLeft,
                              prevArrowKeys = curArrows | afterMouseState});
             nudgedScene
+        }
+
+    /// 現在のシーンの有効カメラからビューポートオフセットを計算する。
+    /// カメラがなければゼロ（CanvasLayer のみのシーン等）
+    def activeCameraOffset(scene: Scene[NodeTag]): Vec2.Vec2 \ GameEngine.Game =
+        match Scene.findActiveCamera(scene) {
+            case Some(cam) =>
+                let vp = GameEngine.Game.getViewportRect();
+                Camera2D.getViewportOffset(cam,
+                    {viewportWidth = vp#size#x, viewportHeight = vp#size#y})
+            case None => Vec2.zero()
         }
 
     /// HotReload watcher の通知をノンブロッキングで消費する。
@@ -135,8 +148,13 @@ mod Editor {
         let stateData = EditorState.get();
         if (not stateData#on) scene
         else {
+            let mousePos = GameEngine.Game.getMousePosition();
+            let cameraOffset = activeCameraOffset(scene);
             scene
                 |> Overlay.addEditorIndicator(fontAtlas)
-                |> Overlay.addSelectionBox(stateData#rootJsonIndex, stateData#selected)
+                |> Overlay.addSelectionBox(stateData#rootJsonIndex, stateData#selected,
+                                           cameraOffset)
+                |> Overlay.addHoverBox(stateData#rootJsonIndex, mousePos, stateData#selected,
+                                       cameraOffset)
         }
 }

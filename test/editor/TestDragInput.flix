@@ -161,7 +161,9 @@ mod TestDragInput {
                                   {x = 100.0, y = 100.0},  // dragOrigin
                                   {x = 100.0, y = 100.0});  // nodeOrigin
         let (newState, _) = DragInput.handleMouse(
-            {pos = {x = 100.0, y = 100.0}, leftDown = false}, state, scene);
+            {pos = {x = 100.0, y = 100.0}, leftDown = false},
+            {x = 0.0, y = 0.0},
+            state, scene);
         // ドラッグ状態がクリアされている
         Assert.assertEq(
             expected = (true, true),
