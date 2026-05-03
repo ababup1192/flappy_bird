@@ -352,13 +352,16 @@ mod Game {
             GameEngine.Game.isKeyPressed(GameEngine.Key.Escape)) ()
         else {
             let dt = GameEngine.Game.getDeltaTime();
-            let updatedScene = scene
-                |> GameEngine.process(dt, false)
-                |> GameEngine.physicsProcess(dt, false, PhysicsStep.defaultGravity())
-                |> GameEngine.handleInput
-                |> GameEngine.handleButtons
-                |> GameEngine.handleCollisions
-                |> Editor.handleInput;
+            // Editor.handleInput を先に走らせて F1 トグルを今フレームに反映させる。
+            // ON のときはゲーム更新（process / physics / 入力 / ボタン / 衝突）を全部止める
+            let sceneAfterEditor = Editor.handleInput(scene);
+            let updatedScene = if (Editor.isOn()) sceneAfterEditor
+                               else sceneAfterEditor
+                                   |> GameEngine.process(dt, false)
+                                   |> GameEngine.physicsProcess(dt, false, PhysicsStep.defaultGravity())
+                                   |> GameEngine.handleInput
+                                   |> GameEngine.handleButtons
+                                   |> GameEngine.handleCollisions;
             let currentPhase = Phase.get();
             // hot reload: scene.json が更新されたら applyPhaseChange を再実行してシーンを組み直す。
             // ただし GameOver は applyPhaseChange が enterGameOver で既存シーンに overlay を
