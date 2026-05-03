@@ -360,7 +360,11 @@ mod Game {
                 |> GameEngine.handleCollisions
                 |> Editor.handleInput;
             let currentPhase = Phase.get();
-            // hot reload: GameOver 中は overlay 重複を避けるためスキップ
+            // hot reload: scene.json が更新されたら applyPhaseChange を再実行してシーンを組み直す。
+            // ただし GameOver は applyPhaseChange が enterGameOver で既存シーンに overlay を
+            // 重ねる方式なので、再実行すると overlay が二重・三重に積まれてしまう
+            // （Menu / Playing はフルリビルドなので何度実行しても破綻しない）。
+            // よって GameOver 中はリロード要求を握り潰す
             let reloadRequested = Editor.pollReload() and currentPhase != GamePhase.GameOver;
             let nextScene = if (currentPhase != previousPhase or reloadRequested)
                                 applyPhaseChange(currentPhase, fontAtlas, updatedScene)
