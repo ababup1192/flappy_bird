@@ -21,57 +21,25 @@ allowed-tools: Read, Grep, Glob, Bash
 
 **症状**: `Unexpected token` / `Parse error` が変数名や import 文で発生
 
-**原因**: Flix の予約語を識別子として使っている
-
-**予約語一覧**（特にハマりやすいもの）:
-- `handler` — エフェクトハンドラで使用
-- `do` — エフェクト呼び出しで使用
-- `resume` — エフェクトハンドラで使用
-- `spawn` — 並行処理で使用
-- `region` — リージョンで使用
-- `inject` / `project` / `solve` — Datalog で使用
-
-**修正**: 別の単語を使うか、2単語以上で命名する（例: `handler` → `actionHandler`, `eventAction`）
+**修正**: 予約語（`handler`, `do`, `resume`, `spawn`, `region`, `inject`, `project`, `solve`）を識別子に使わない。別の単語か 2 単語以上で命名する。詳細は `flix-docs` の「予約語に注意」を参照。
 
 ### 2. import の位置（スコープエラー）
 
 **症状**: Java クラスが見つからない / `Unresolved type`
 
-**原因**: Java の import がモジュールのトップレベルにない
-
-**修正**: import 文をモジュール直下（関数の外）に移動する
-
-```flix
-mod MyModule {
-    import java.util.ArrayList  // ← ここに書く
-
-    pub def foo(): ... =
-        // import をここに書くとエラー
-        ...
-}
-```
+**修正**: Java の import をモジュール直下（関数の外）に移動する。詳細は `flix-docs` の「Java interop」を参照。
 
 ### 3. Channel API の引数（型エラー）
 
 **症状**: `Channel.buffered` で型が合わない / Region 関連エラー
 
-**原因**: 0.71.0 では `Channel.buffered(size)` は Region を受け取らない
-
-**修正**: `Channel.buffered(rc)` → `Channel.buffered(size)` に変更。戻り値は `(Sender[t], Receiver[t])`。
+**修正**: `Channel.buffered(rc)` → `Channel.buffered(size)`。戻り値は `(Sender[t], Receiver[t])`。詳細は `flix-docs` の「Channel API」を参照。
 
 ### 4. try-catch の例外型（型エラー）
 
 **症状**: `##java.io.IOException` が見つからない
 
-**原因**: 0.71.0 では `##` プレフィックスは不要。import してからクラス名で使う。
-
-**修正**:
-```flix
-import java.io.IOException
-try { ... } catch {
-    case _: IOException => ...
-}
-```
+**修正**: `##` プレフィックスを外し、`import java.io.IOException` してからクラス名で使う。詳細は `flix-docs` の「try-catch での Java 例外」を参照。
 
 ### 5. レコード更新の構文（型エラー）
 
