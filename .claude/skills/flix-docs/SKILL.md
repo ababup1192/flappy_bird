@@ -47,6 +47,18 @@ def update(player: Player, scene: Scene): Scene = ...
   - **4 つ以上の引数**で意味の単位が混在しているときも検討する
   - 一緒に使われ続けるパラメータセットは型エイリアスにして再利用する
     - 例: `(rootJsonIndex, scene)` → `EditableNode.LookupCtx`、`(mousePos, mouseLeft)` → `DragInput.MouseSnapshot`
+  - **同じ形のレコードを複数の関数で使うときは、シグネチャにインライン定義せず `type alias` を共有する**（フィールド追加時の修正漏れを防ぐ）
+
+```flix
+// NG: 同じ形を複数の関数で繰り返す
+def hitTest(input: {pos = Vec2, button = MouseButton}, scene: Scene): ...
+def startDrag(input: {pos = Vec2, button = MouseButton}, scene: Scene): ...
+
+// OK: 1 か所で type alias 定義
+type alias MouseSnapshot = {pos = Vec2, button = MouseButton}
+def hitTest(input: MouseSnapshot, scene: Scene): ...
+def startDrag(input: MouseSnapshot, scene: Scene): ...
+```
 
 ```flix
 // NG: Float64 連続 / 4 引数で取り違え危険

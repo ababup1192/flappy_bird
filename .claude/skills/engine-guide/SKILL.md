@@ -1,6 +1,6 @@
 ---
 name: engine-guide
-description: "ゲームエンジン（Scene[s], EngineNode[s], GameEngine）のコードを書く前に参照するお作法ガイド。NodeTag設計、trait実装、衝突応答、動的スポーンを含む"
+description: "ゲームエンジン（Scene[s], EngineNode[s], GameEngine）のコードを書く前に参照するお作法ガイド。主にGame.flixとXxxScene.flixの責務分担や、NodeTagの使い方、ロジックの書き方などを解説する。"
 user-invocable: false
 ---
 
@@ -10,10 +10,10 @@ user-invocable: false
 
 | ファイル | 責務 |
 |---|---|
-| `src/Main.flix` | EngineConfig + LwjglLayer 起動のみ |
+| `src/Main.flix` | EngineConfig + Assets読み込み + LwjglLayer 起動のみ |
 | `src/scenes/Game.flix` | NodeTag enum, trait instance, mod Game（buildState・gameLoop） |
-| `src/scenes/XxxScene.flix` | 個別シーンの構築・更新（scene-pattern 参照） |
-| `src/engine/**` | エンジン層（通常は変更不要） |
+| `src/scenes/XxxScene.flix` | 個別シーンの構築・ゲームエンジンライフサクル・イベント処理（scene-pattern 参照） |
+| `src/engine/**` | エンジン層（通常は変更不要だが、拡張することでより良いロジックを書ける場合は、拡張したい旨を開発者へ相談する） |
 
 ## Main.flix — エントリポイント専用
 
