@@ -72,27 +72,53 @@ def velocityY(): Float64 = -300.0
 
 ## (C) 構築 — add
 
-ノードツリーを構築して、Sceneに追加する。
+`add`関数は、ノードツリーを構築して、Sceneに追加する。
 このときに、NodeTagと(A)で定義したデータ型(初期値)を紐づける。
-さらに細かい単位で、Sceneに追加したい場合は、addXxx のような関数を追加する。
+さらに細かい単位で、Sceneに追加したい場合は、`addXxx` のような関数を追加する。
+Scene情報は、JSONファイルで管理し、`add`関数では、JSONをロードして、ノードツリーを構築する。Nodeに付与するメタデータは、NodeTagを使って付与する。
 
 ```flix
-pub def add(scene: Scene[NodeTag]): Scene[NodeTag] =
-    let sprite = AnimatedSprite2D.make(animations, initialAnimation = "idle",
-        fps = 5.0, startPos, scale)
-        |> CanvasItem.hide;
-    let area = Area2D.make(Vec2.zero(), collisionShape);
-    let xxxData = { velocity = Vec2.zero(), hp = 100 };
-    scene
-        |> Scene.addNode(name(),
-            EngineNode.AnimSprite2DWithState(sprite,
-                NodeTag.XxxSprite(xxxData)))           // 親: データを保持
-        |> Scene.addChild(name(), areaName(),
-            EngineNode.Area2DWithState(area,
-                NodeTag.XxxArea))                       // 子: 識別タグ
+def sceneJsonPath(): String = "src/scenes/XxxScene.scene.json"
+
+pub def add(scene: Scene[NodeTag]): Scene[NodeTag] \ Fs.FileRead =
+    let data: data = {speed = speed(), state = Walking};
+    SceneLoader.loadScene(sceneJsonPath(), scene)
+        |> Scene.setState(playerPath(), NodeTag.Player(data))
 ```
 
-動的スポーン（名前が実行時に決まる）の場合:
+```
+{
+  "type": "RigidBody2D",
+  "name": "player",
+  "pos": [144, 256],
+  "shape": {"kind": "CircleShape2D", "radius": 13},
+  "gravityScale": 1.0,
+  "linearVelocity": [100, 0],
+  "children": [
+    {
+      "type": "AnimatedSprite2D",
+      "name": "sprite",
+      "pos": [0, 0],
+      "scale": [2, 2],
+      "animations": {
+        "walk": [],
+        "run": []
+      },
+      "initialAnimation": "walk",
+      "fps": 10
+    },
+    {
+      "type": "Area2D",
+      "name": "area",
+      "pos": [0, 0],
+      "shape": {"kind": "CircleShape2D", "radius": 13}
+    }
+  ]
+}
+
+```
+
+動的スポーン（名前やパラメータが実行時に決まる）の場合は、JSONを使わず、構築関数内でノードツリーを構築する。
 
 ```flix
 pub def spawnXxx(name: String, position: Vec2.Vec2,
@@ -117,148 +143,95 @@ pub def spawnXxx(name: String, position: Vec2.Vec2,
 ゲームエンジンでは、以下のライフサイクルが存在する。
 各Sceneでは、ライフサイクルに応じたロジックを定義し、Game.flixは、各Sceneのライフサイクルロジックを呼び出し、委譲する。
 
-- ready
+- ready: シーン（ノード）がシーンツリーに追加され、準備が整った直後に1回だけ呼び出される。子ノードの読み込みも完了した状態なので、変数の初期化やノード間の紐付けロジックをここに書く。
+- input: キーの押下やマウス移動など、入力イベントを検知した瞬間に呼び出される。ジャンプボタンの判定やメニューの開閉など、特定の「イベント」をトリガーにする処理をここに書く。
+- process: 画面の描画（フレーム）ごとに呼び出される。実行間隔はPCの性能や負荷によって変動するため、見た目のアニメーション更新や、物理演算に関わらない毎フレームの監視ロジックをここに書く。
+- physicsProcess: 一定の時間間隔（固定フレーム）で呼び出される。描画の負荷に左右されず常に一定の周期で動くため、キャラクターの移動計算や物理的な衝突判定などのロジックをここに書く。
 
-**純粋スタイル** — エンジン型 + データを受け取り、更新して返す。Node instance 側でラップ/アンラップ:
 
-```flix
+```PlayerScene.flix
 // XxxScene 側
-pub def ready(sprite: AnimatedSprite2D, data: XxxData
-             ): (AnimatedSprite2D, XxxData) \ GameEngine.Game =
-    (sprite, { screenSize = GameEngine.Game.getViewportRect()#size | data })
-
-pub def process(dt: Float64, sprite: AnimatedSprite2D,
-                data: XxxData): AnimatedSprite2D =
-    Node2D.setPosition(
-        Vec2.add(Node2D.getPosition(sprite), Vec2.mul(data#velocity, dt)),
-        sprite)
-
-// Node[NodeTag] instance 側（エンジン型は EngineNode の中だけ — 同期コード不要）
-redef ready(node, _path, scene) = match node {
-    case EngineNode.AnimSprite2DWithState(sprite, NodeTag.XxxSprite(data)) =>
-        let (s, d) = XxxScene.ready(sprite, data);
-        (EngineNode.AnimSprite2DWithState(s, NodeTag.XxxSprite(d)), scene)
-    case _ => (node, scene)
+pub def ready(node: EngineNode[NodeTag], _path: NodePath,
+                scene: Scene[NodeTag]): (EngineNode[NodeTag], Scene[NodeTag]) =
+    match node {
+        case EngineNode.RigidBody2DWithState(body, NodeTag.Player(data)) =>
+            if (playerData#state == PlayerState.Walking) {
+                (EngineNode.RigidBody2DWithState(run(body), NodeTag.Player(data)), scene)
+            } else {
+                (node, scene)
+            }
+        case _ => (node, scene)
 }
-```
 
-**Scene スタイル** — path + scene を受け取り、内部で mapXxx を使う。複数ノードを触る場合に適する:
-
-```flix
-// XxxScene 側
-pub def ready(path: NodePath, direction: Float64,
-              scene: Scene[NodeTag]): Scene[NodeTag] \ Math.Random =
-    scene |> mapXxx(path, (body, data) ->
-        (RigidBody2D.setLinearVelocity(vel, body), data))
-
-// Node[NodeTag] instance 側
-redef ready(node, path, scene) = match node {
-    case EngineNode.RigidBody2DWithState(_, NodeTag.XxxData(_)) =>
-        let newScene = XxxScene.ready(path, direction, scene);
-        // mapXxx が path のノードを更新済みなので、シーンから取り直す
-        match Scene.getEngineNode(path, newScene) {
-            case Some(en) => (en, newScene)
-            case None     => (node, newScene)
+ pub def input(event: GameEngine.Key, scene: Scene[NodeTag]): Scene[NodeTag] \ GameEngine.Audio =
+        match getPlayerData(scene)#state {
+            case PlayerState.Walking =>
+                if (key == GameEngine.Key.Space) {
+                    GameEngine.Audio.playAudio("sfx_wing");
+                    scene |> mapPlayerBody((body, birdData) -> (jump(body), birdData))
+                } else scene
+            case _ => scene
         }
-    case _ => (node, scene)
+
+ pub def physicsProcess(_delta: Float64, node: EngineNode[NodeTag],
+                           _path: NodePath, scene: Scene[NodeTag]
+                          ): (EngineNode[NodeTag], Scene[NodeTag]) =
+        match node {
+            case EngineNode.RigidBody2DWithState(body, NodeTag.Player(data)) =>
+                let newBody = match playerData#state {
+                    case PlayerState.Walking => walkingUpdate(body)
+                    case _ => body
+                };
+                (EngineNode.RigidBody2DWithState(newBody, NodeTag.Player(data)), scene)
+            case _ => (node, scene)
+        }
+```
+
+### イベント処理
+
+入力や衝突の判定などの処理は、Game.flixで、イベントのハンドラーのインスタンスを定義する。そこでは、イベント対象のパターンマッチを行い、該当するSceneのロジックを呼び出し、処理を委譲する。
+
+```Game.flix
+instance AreaEvent.AreaHandler[NodeTag] {
+    type Aef = { GameEngine.Audio }
+    pub def onAreaEntered(selfPath: NodePath, selfState: NodeTag,
+                          otherPath: NodePath, otherState: NodeTag,
+                          scene: Scene[NodeTag]): Scene[NodeTag] \ {GameEngine.Audio} =
+        match (selfState, otherState) {
+            case (NodeTag.PlayerArea, NodeTag.EnemyArea) =>
+                PlayerScene.onPlayerHitEnemy(scene)
+            case (NodeTag.EnemyArea, NodeTag.PlayerArea) =>
+                PlayerScene.onPlayerHitEnemy(scene)
+            case _ => checked_ecast(scene)
+        }
 }
 ```
 
-Scene スタイルでは、XxxScene.ready が scene 内のノードを更新するため、
-Node instance 側は `Scene.getEngineNode` で取り直す（foldNodes の上書きを防ぐ）。
+### Scene変換関数
 
-### その他のロジック
-
-`mapXxxSprite` を使って scene を変換する:
-
-```flix
-pub def applyInput(dir: Vec2.Vec2, scene: Scene[NodeTag]): Scene[NodeTag] =
-    scene |> mapXxxSprite((sprite, data) ->
-        (updateAnimation(dir, sprite),
-         { velocity = computeVelocity(dir) | data }))
-```
-
-sprite と area の両方を操作する場合は `mapXxx` を使う:
-
-```flix
-pub def start(pos: Vec2.Vec2, scene: Scene[NodeTag]): Scene[NodeTag] =
-    scene |> mapXxx(
-        (sprite, data) ->
-            (sprite |> position(pos) |> show, { hit = false | data }),
-        Area2D.setMonitoring(true))
-```
-
-単一ノードだけ操作する場合は `Scene.mapEngineNode` で十分:
-
-```flix
-pub def setText(text: String, scene: Scene[NodeTag]): Scene[NodeTag] =
-    scene |> Scene.mapEngineNode(labelPath(),
-        EngineNode.mapLabel2D(Label2D.setText(text)))
-```
-
-## (E) mapXxxSprite / mapXxxArea / mapXxx
-
-コンポーネントごとに map 関数を用意し、合成で `mapXxx` を作る。
+各Sceneが、ゲームに影響を与えるには、Scene[NodeTag]を受け取って、中のノードの内容を変換したScene[NodeTag]を返すことで実現する。しかし、Scene[NodeTag]は、ツリー構造のため、特定のノードをパターンマッチして変換するのは、冗長である。そこで、Scene[NodeTag]の特定のノードをパターンマッチして変換するための、ボイラプレート関数を用意する。
 
 ```
-mapXxxSprite  ── sprite + XxxData を変換（親ノード操作）
-mapXxxArea    ── Area2D を変換（子ノード操作）
-mapXxx        ── mapXxxSprite >> mapXxxArea の合成
-```
-
-```flix
-/// 親ノードの sprite と XxxData を変換する
-pub def mapXxxSprite(f: (AnimatedSprite2D, XxxData) -> (AnimatedSprite2D, XxxData),
-                     scene: Scene[NodeTag]): Scene[NodeTag] =
-    Scene.mapEngineNode(xxxPath(), engineNode -> match engineNode {
-        case EngineNode.AnimSprite2DWithState(sprite, NodeTag.XxxSprite(data)) =>
-            let (newSprite, newData) = f(sprite, data);
-            EngineNode.AnimSprite2DWithState(newSprite, NodeTag.XxxSprite(newData))
-        case other => other
-    }, scene)
-
-/// 子ノードの Area2D を変換する
-pub def mapXxxArea(f: Area2D -> Area2D, scene: Scene[NodeTag]): Scene[NodeTag] =
-    Scene.mapEngineNode(areaPath(), EngineNode.mapArea2D(f), scene)
-
-/// sprite・XxxData・Area2D をまとめて変換する（mapXxxSprite と mapXxxArea の合成）
-pub def mapXxx(spriteF: (AnimatedSprite2D, XxxData) -> (AnimatedSprite2D, XxxData),
-               areaF: Area2D -> Area2D,
-               scene: Scene[NodeTag]): Scene[NodeTag] =
-    scene |> mapXxxSprite(spriteF) |> mapXxxArea(areaF)
-
-/// Scene から XxxData を取り出す
-pub def getXxxData(scene: Scene[NodeTag]): XxxData =
-    match Scene.getState(xxxPath(), scene) {
-        case Some(NodeTag.XxxSprite(data)) => data
-        case _ => bug!("xxx not found")
-    }
-```
-
-### 設計の要点
-
-1. **エンジン型の正本は EngineNode の中だけ** — `mapXxxSprite` は `Scene.mapEngineNode` 経由で操作するため、
-   エンジン型のコピーが複数箇所に存在しない
-2. **子ノードのパスを公開しない** — `mapXxxArea` が `areaPath()` をカプセル化する
-3. **合成で拡張** — コンポーネントが増えたら `mapXxxNewChild` を追加し、`mapXxx` の合成に1段足すだけ
-
-### 動的パス（実行時に名前が決まるノード）の場合
-
-`path: NodePath` を引数に取る:
-
-```flix
-pub def mapXxxBody(path: NodePath,
-                   f: (RigidBody2D, XxxData) -> (RigidBody2D, XxxData),
-                   scene: Scene[NodeTag]): Scene[NodeTag] =
-    Scene.mapEngineNode(path, engineNode -> match engineNode {
-        case EngineNode.RigidBody2DWithState(body, NodeTag.XxxData(data)) =>
+pub def mapPlayerBody(f: (RigidBody2D, PlayerData) -> (RigidBody2D, PlayerData), scene: Scene[NodeTag]): Scene[NodeTag] =
+    Scene.mapEngineNode(playerPath(), engineNode -> match engineNode {
+        case EngineNode.RigidBody2DWithState(body, NodeTag.Player(data)) =>
             let (newBody, newData) = f(body, data);
-            EngineNode.RigidBody2DWithState(newBody, NodeTag.XxxData(newData))
+            EngineNode.RigidBody2DWithState(newBody, NodeTag.Player(newData))
         case other => other
     }, scene)
 ```
 
-## 使い分け早見表
+同様に、NodeTagに紐づけられた、データも取り出すための関数も用意すると、便利だ。
+
+```
+ pub def getPlayerData(scene: Scene[NodeTag]): PlayerData =
+        match Scene.getState(playerPath(), scene) {
+            case Some(NodeTag.Player(playerData)) => playerData
+            case _ => bug!("player not found")
+        }
+```
+
+## よく使う関数一覧
 
 | やりたいこと | 手段 |
 |---|---|
