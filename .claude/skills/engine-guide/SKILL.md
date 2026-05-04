@@ -1,231 +1,209 @@
 ---
 name: engine-guide
-description: "ゲームエンジン（Scene[s], EngineNode[s], GameEngine）のコードを書く前に参照するお作法ガイド。主にGame.flixとXxxScene.flixの責務分担や、NodeTagの使い方、ロジックの書き方などを解説する。"
+description: "Main.flix と Game.flix の書き方、XxxScene との連携方法のガイド。NodeTag 設計、trait instance のディスパッチ、カスタム effect（GamePhaseState・ライフサイクル副作用要求）、フェーズ遷移を含む（start / gameLoop の詳細は game-loop、個別の XxxScene 設計パターンは scene-editor を参照）"
 user-invocable: false
 ---
 
 # ゲームエンジン お作法ガイド
 
-## ファイル構成と責務
+`src/engine/**` の上に `Scene[NodeTag]` を扱うゲーム層を載せる構成。
+本ガイドは **Main.flix と Game.flix の書き方、XxxScene との連携** に絞る。
+個別の Scene 設計は `scene-editor` skill を参照。
+
+## ファイル責務
 
 | ファイル | 責務 |
 |---|---|
-| `src/Main.flix` | EngineConfig + Assets読み込み + LwjglLayer 起動のみ |
-| `src/scenes/Game.flix` | NodeTag enum, trait instance, mod Game（buildState・gameLoop） |
-| `src/scenes/XxxScene.flix` | 個別シーンの構築・ゲームエンジンライフサクル・イベント処理（scene-pattern 参照） |
-| `src/engine/**` | エンジン層（通常は変更不要だが、拡張することでより良いロジックを書ける場合は、拡張したい旨を開発者へ相談する） |
+| `src/Main.flix` | EngineConfig 組み立てと `Game.start` 起動。**ゲームロジックは書かない** |
+| `src/scenes/Game.flix` | GamePhase enum / カスタム effect / NodeTag enum / trait instance（dispatch のみ）/ mod Game |
+| `src/scenes/XxxScene.flix` | 個別シーン（構築・ライフサイクル・状態遷移・応答） |
+| `src/engine/**` | エンジン層。通常変更しないが、組もうとしているゲームロジックが、エンジン拡張により影響を受ける場合は、開発者に選択肢を挙げ相談する |
 
-## Main.flix — エントリポイント専用
+## Main.flix
 
-ゲームロジックは一切書かない。EngineConfig の定義と起動だけ:
+EngineConfig と起動のみ。**IO 系ハンドラ（`Math.Random`, `Fs.*`）はここで剥がす**。
 
 ```flix
-def main(): Unit \ IO =
+def main(): Unit \ {IO, Chan, NonDet} =
     if (GameEngine.ensureMainThread()) ()
     else {
-        let config: GameEngine.EngineConfig = {
-            screenWidth = Game.screenWi(),
-            screenHeight = Game.screenHi(),
-            title = "My Game",
-            textureManifest = {name = "hero", path = "textures/hero.png", hasAlpha = true} :: Nil,
-            fontManifest = {name = "default", path = "textures/font.ttf", fontSize = 60.0} :: Nil,
-            soundManifest = {name = "bgm", path = "sounds/bgm.ogg", looping = true} :: Nil,
-            clearColor = {r = 0.0f32, g = 0.0f32, b = 0.0f32}
-        };
-        Math.Random.runWithIO(_ ->
-            run { Game.start(GameEngine.Game.getFontAtlas("default")) }
-            with LwjglLayer.withLwjgl(config)
-        )
+        let config: GameEngine.EngineConfig = { screenWidth = ..., ... };
+        run { Game.start(GameEngine.Game.getFontAtlas("default")) }
+        with LwjglLayer.withLwjgl(config)
+        with Math.Random.runWithIO
+        with Fs.FileRead.runWithIO
+        ...
     }
 ```
 
-## Game.flix — 構成順序
+## Game.flix の並び順
 
-トップレベルに enum / type alias / instance、末尾に mod Game:
+`GamePhase enum` → カスタム effect 群 → type alias → `NodeTag enum` → trait instance 群（Node / Input / Button / Area / NodeRemoved を必要なものだけ）→ `mod Game { 構築関数 / start / gameLoop / applyPhaseChange }`
 
-```
-// 1. GamePhase enum
-// 2. NodeTag enum
-// 3. GameState type alias
-// 4. Node[NodeTag] instance
-// 5. AreaHandler[NodeTag] instance
-// 6. ScreenNotifyHandler[NodeTag] instance（必要な場合）
-// 7. TimerEvent.TimerHandler[NodeTag] instance（必要な場合）
-// 8. mod Game { buildState, gameLoop, フェーズ遷移, ヘルパー }
-```
+## カスタム effect — 横断的な間接化
 
-### GameState type alias
+「複数シーンに跨る副作用」「ライフサイクル外から発火する処理」はカスタム effect で宣言する。
+**handler の Aef を増やさず、副作用の実体は `Game.start` 内で `with handler` 注入**する。
 
-scene とゲーム全体の状態を 1 レコードにまとめる:
-基本は、SceneとGamePhaseだけ、内部状態は、次のNodeTagのenumに含める
+代表的な使い分け（次の 2 節で詳しく扱う）:
+- `GamePhaseState` — フェーズの読み書き
+- `XxxRequest` 系 — ライフサイクル関数からの副作用要求（乱数・スポーン等）
+- `XxxStateChanged` — あるシーンの状態遷移を別シーンに通知
 
-```flix
-pub type alias GameState = { scene = Scene[NodeTag], phase = GamePhase }
-```
+判断基準: **handler の Aef に直接副作用を足したくないが、副作用は必要** なときだけ使う。乱用しない。
 
+## GamePhase / GamePhaseState — フェーズ遷移の流れ
 
-### NodeTag enum
+`GamePhase` はゲーム全体の進行状態（Menu / Playing / GameOver 等）。
+**ノード単位の状態（NodeTag に持たせる XxxData）とは別レイヤー** で扱う。
 
-NodeTagは、イベントのフックとして使われるSceneのノードに関連した識別情報を持つための列挙型。
-さらにゲームの状態を識別情報とセットで持つバリアントも含める。
-そうすることで、集約度が高くなり、Sceneのノードとゲームの状態を一元管理できる。
-バリアントの命名規則として、xxSprite, xxArea, xxTimerのように、Node名を接頭辞にすることで、役割が明確になる。
+`GamePhaseState` は「フェーズの読み書き」を表すカスタム effect。
+**遷移はどの handler から発火してもよい**（Input / Area / NodeRemoved 等どこでも）。
+handler 側は条件を判定して `put` するだけ。実体の切り替えは gameLoop が担う。
 
 ```flix
-type alias Score = Int32 // 状態はプリミティブ型の場合は、意味づけのための type alias で別名をつける
+pub eff GamePhaseState {
+    def get(): GamePhase
+    def put(target: GamePhase): Unit
+}
+```
 
+3 段の流れ:
+
+1. 任意の handler が `GamePhaseState.put(target)` で遷移要求
+2. gameLoop が前フレームの phase と現在の phase を比較し、変化があれば `applyPhaseChange` を呼ぶ
+3. `applyPhaseChange` が新しい phase に対応したシーンを構築（フルリビルド or オーバーレイ）
+
+実体（region の `Ref` を読み書きする handler）は `start` で注入する → **`game-loop` skill 参照**。
+
+メリット: handler は遷移条件だけに集中でき、シーン再構築は 1 か所に集約される。
+
+## ライフサイクルでのカスタム effect 利用 — 副作用を Aef から切り離す
+
+`process` / `ready` 等のライフサイクル関数で副作用（乱数、音、ファイル等）が必要なとき、
+**それを直接呼ばず、カスタム effect を emit するだけにする**。
+副作用の実体は `start` の handler で注入する。
+
+例: process 中に「ランダム位置でスポーンしたい」場合、`Math.Random` を Aef に持たせず `SpawnRequest` を介す。
+
+```flix
+/// process から「個体のスポーン」を要求する。実体は handler 側
+pub eff SpawnRequest {
+    def request(scene: Scene[NodeTag]): Scene[NodeTag]
+}
+
+// XxxScene.process: SpawnRequest を emit するだけ。Math.Random は知らない
+pub def process(node, path, scene): (..., ...) \ SpawnRequest =
+    if (offscreen) (node, SpawnRequest.request(Scene.removeAt(path, scene)))
+    else (node, scene)
+```
+
+実体（乱数 + ビルダーで実スポーンする handler）は `start` で注入する → **`game-loop` skill 参照**。
+
+メリット:
+- ライフサイクル関数の Aef は `{ SpawnRequest }` のまま小さく保てる
+- `Math.Random` などの IO 系は **start から外側へ伝播せず**、`Main.flix` で剥がせる
+- handler を差し替えればテスト時に決定的なスポーンに切り替えられる
+
+## NodeTag enum
+
+`Scene[NodeTag]` の型パラメータ。**ノード単位の状態（XxxData）もここに含める**。
+
+```flix
 pub enum NodeTag {
-    case xxxSprite(xxxData)                       // Sprite2D + データ
-    case XxxArea                                  // 衝突判定を行うためのタグ状態は持たない
-    case ScoreTimer(Score)                        // タイマー + スコア
-    case NoTag                                    // イベントフックなし
+    case Xxx(XxxScene.XxxData)   // 主要ノード + 状態
+    case XxxArea                 // 衝突検知用 Area2D（識別だけ）
+    case ScoreLabel(HUDScene.Score)       // ラベル + 値
+    case NoTag                   // タグ不要なノード
 }
 ```
 
+設計指針:
+- バリアント名は **役割接頭辞**（`xxArea`, `xxLabel`, `xxPart`）で揃える
+- エンジン型（Sprite2D, Area2D 等）は **NodeTag に入れない**（EngineNode 側に持つ）
+- `XxxData` の中身は **そのシーンの mod 内で `pub type alias` 定義** する
 
-## Game.flix と XxxScene の協業
+## trait instance はディスパッチだけ
 
-### Node instance — XxxScene への委譲
-
-`EngineNode × NodeTag` の二重 match で分岐し、XxxScene の関数に委譲する:
-なるべく、各Sceneで ready, process, pyhisicProcess を定義することで、GameLoopはシンプルに保つ。
-Game.flixに処理はなるべく書かない。
+各 instance は二重 match で **XxxScene の関数に委譲するだけ**。Game.flix にロジックを書かない。
 
 ```flix
+// Node: EngineNode + NodeTag の組で各 Scene のライフサイクルへ
 instance Node[NodeTag] {
+    type Aef = { SpawnRequest }
     redef ready(node, path, scene) = match node {
-        // 純粋スタイル: エンジン型 + データを渡し、戻り値を再ラップ
-        case EngineNode.AnimSprite2DWithState(sprite, NodeTag.XxxState(n, data)) =>
-            let (s, d) = XxxScene.ready(sprite, data);
-            (EngineNode.AnimSprite2DWithState(s, NodeTag.XxxState({ sprite = s | n }, d)), scene)
+        case EngineNode.RigidBody2DWithState(_, NodeTag.Xxx(_)) =>
+            checked_ecast(XxxScene.ready(node, path, scene))
         case _ => (node, scene)
     }
+    redef process(...) = ...
+    redef physicsProcess(...) = ...
+}
 
-    redef process(delta, node, _path, scene) = match node {
-        case EngineNode.AnimSprite2DWithState(sprite, NodeTag.XxxState(n, data)) =>
-            let moved = XxxScene.process(delta, sprite, data);
-            (EngineNode.AnimSprite2DWithState(moved, NodeTag.XxxState({ sprite = moved | n }, data)), scene)
-        case _ => (node, scene)
-    }
+// Area: NodeTag ペアで分岐。衝突は対称なので左右両方向書く
+match (selfState, otherState) {
+    case (NodeTag.XxxArea, NodeTag.Yyy) => XxxScene.onXxxHitYyy(scene)
+    case (NodeTag.Yyy, NodeTag.XxxArea) => XxxScene.onXxxHitYyy(scene)
+    case _ => checked_ecast(scene)
+}
 
-    physicProcess(delta, node, _path, scene) = match node {
-        case EngineNode.AnimSprite2DWithState(sprite, NodeTag.XxxState(n, data)) =>
-            let moved = XxxScene.physicsProcess(delta, sprite, data);
-            (EngineNode.AnimSprite2DWithState(moved, NodeTag.XxxState({ sprite = moved | n }, data)), scene)
-        case _ => (node, scene)
-    }
+// Button: NodeTag ではなく buttonPath で識別（NodeTag は NoTag のまま）
+redef onButtonPressed(buttonPath, _, scene) =
+    if (buttonPath == XxxScene.playButtonPath()) ... else scene
+
+// NodeRemoved: removeAtAndNotify されたノードに対しカスタム effect で要求を出す
+redef onNodeRemoved(_path, state, scene) = match state {
+    case NodeTag.Yyy => SpawnRequest.request(scene)
+    case _ => scene
 }
 ```
 
-### AreaHandler — 衝突応答
+## mod Game
 
-引数は NodeTag の値（EngineNode ではない）。scene を XxxScene の関数で変換:
+### シーン構築 — フェーズ別に別関数
 
-```flix
-instance AreaHandler[NodeTag] {
-    pub def onAreaEntered(_selfPath, selfState, _otherPath, otherState, scene) =
-        match (selfState, otherState) {
-            case (NodeTag.XxxArea, NodeTag.YyyData(_)) =>
-                scene |> XxxScene.mapXxx((node, data) ->
-                    ({ sprite = CanvasItem.hide(node#sprite) | node },
-                     { hit = true | data }))
-            case _ => scene
-        }
-}
-```
-
-### TimerHandler — タイマーイベント
-
-NodeTag バリアントで分岐。XxxScene の構築・操作関数を呼ぶ:
+`Scene.empty()` に各 `XxxScene.addXxx` をパイプで繋ぐ。
 
 ```flix
-instance TimerEvent.TimerHandler[NodeTag] {
-    redef onTimeout(timerPath, state, scene) = match state {
-        case NodeTag.SpawnTimer(counter) =>
-            let newScene = Game.spawnFromPath(counter, scene);
-            Scene.setState(timerPath, NodeTag.SpawnTimer(counter + 1), newScene)
-        case _ => scene
-    }
-}
+pub def buildPlayingScene(fontAtlas, ...): Scene[NodeTag] \ {Math.Random, Fs.FileRead} =
+    Scene.empty()
+        |> addBackground
+        |> XxxScene.addXxx
+        |> CameraScene.addCamera(XxxScene.name())
+        |> ScoreScene.addHud(fontAtlas, ...)
+
+pub def buildMenuScene(...): Scene[NodeTag] \ Fs.FileRead = ...
 ```
 
-### ScreenNotifyHandler — 画面外通知
+### start / gameLoop / applyPhaseChange
 
-```flix
-instance ScreenNotifyHandler[NodeTag] {
-    redef onScreenExited(path, state, scene) = match state {
-        case NodeTag.YyyData(_) => Scene.removeAt(path, scene)
-        case _ => scene
-    }
-}
-```
+ゲーム全体の制御の中心で、責務分担とエディタ・ホットリロード統合の話があるため
+**専用の `game-loop` skill に切り出し**ている。これらを編集するときは `game-loop` を参照すること。
 
-## mod Game — buildState と gameLoop
+要点だけ:
+- `start` — 起動時 1 回。region + Ref / エディタ常駐 / 横断 effect の handler 注入
+- `gameLoop` — 毎フレームの固定パイプライン（終了判定 → エディタ入力 → エンジンパイプライン → フェーズ差分 → 描画）
+- `applyPhaseChange` — フェーズに応じてシーンを組み立てる（フルリビルド or オーバーレイ）
+- いずれも **配線役**。Scene 固有のロジックを書かず、Scene の関数を呼ぶだけ
 
-### buildState
+## XxxScene との連携契約
 
-`Scene.empty()` に各 XxxScene.addXxx をパイプで繋ぎ、GameState を返す:
+Game.flix が各 XxxScene に期待する公開 API:
 
-```flix
-pub def buildState(fontAtlas: FontAtlas): GameState =
-    { scene = Scene.empty()
-          |> XxxScene.addXxx
-          |> YyyScene.addYyy
-          |> Scene.addNode("timer", EngineNode.TimerWithState(timer, NodeTag.SpawnTimer(0))),
-      phase = GamePhase.Menu, score = 0 }
-```
-
-### エンジン更新パイプライン
-
-GameEngine の関数を `>>` で連結:
-
-```flix
-def engineUpdate(dt: Float64, scene: Scene[NodeTag]): Scene[NodeTag] \ {...} =
-    (GameEngine.process(dt, false)
-    >> GameEngine.physicsProcess(dt, false, PhysicsStep.defaultGravity())
-    >> GameEngine.emitCollision
-    >> GameEngine.emitScreenNotify(screenWidth = screenWi(), screenHeight = screenHi())
-    >> GameEngine.emitTimers)(scene)
-```
-
-### gameLoop
-
-フェーズごとに match で処理を切り替え、末尾再帰:
-
-```flix
-def gameLoop(fontAtlas: FontAtlas, state: GameState): Unit \ {...} =
-    if (GameEngine.Game.shouldClose()) ()
-    else {
-        let dt = GameEngine.Game.getDeltaTime();
-        let nextState = match state#phase {
-            case GamePhase.Playing =>
-                let updatedScene = engineUpdate(dt, state#scene);
-                { scene = updatedScene | state }
-            case GamePhase.GameOver => ...
-        };
-        GameEngine.render(nextState#scene);
-        gameLoop(fontAtlas, nextState)
-    }
-```
-
-### フェーズ遷移
-
-`GameState -> GameState` の関数として定義。XxxScene の操作関数をパイプで繋ぐ:
-
-```flix
-pub def newGame(state: GameState): GameState \ GameEngine.Audio =
-    AudioStreamPlayer.play(bgmKey());
-    let scene = state#scene
-        |> Scene.removeGroup(YyyScene.yyyGroup())
-        |> XxxScene.start(startPos)
-        |> HudScene.showMessage("Get Ready");
-    { scene = scene, phase = GamePhase.Playing, score = 0 }
-```
+| 用途 | 期待される関数 |
+|---|---|
+| シーン構築 | `addXxx(scene): Scene \ Fs.FileRead`、必要なら `addXxxForMenu` 等のフェーズ別バリアント |
+| ライフサイクル | `ready` / `process` / `physicsProcess`（必要なものだけ） |
+| 入力ディスパッチ | `input(event, scene): Scene \ {...}` |
+| 衝突応答 | `onXxxHitYyy(scene): Scene \ {...}` |
+| ボタン識別 | `xxButtonPath(): NodePath` |
+| 動的スポーン | `spawnRecycledXxx(scene): Scene` |
+| ノード名 | `name(): String`（カメラ追従先など他シーンから参照される場合） |
 
 ## 注意事項
 
-- NodeTag にエンジン型（Area2D, Sprite2D 等）をラップしない
-- Main.flix にゲームロジックを書かない
-- 動的スポーンの名前はカウンタ等でユニークにする
-- 同一フレームで追加したノードの process は次フレームから
-- Scene スタイルの ready では `Scene.getEngineNode` で取り直す（foldNodes の上書き防止）
+- NodeTag にエンジン型を入れない（EngineNode 側に持つ）
+- Main.flix / trait instance にロジックを書かない（配線だけ）
+- 動的スポーンの名前はカウンタや座標から導出してユニーク化
+- 同一フレームで追加したノードの process は次フレームから実行される
+- カスタム effect は handler の Aef を増やしたくない場面限定で使う（乱用しない）
