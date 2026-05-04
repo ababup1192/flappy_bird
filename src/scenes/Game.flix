@@ -16,11 +16,11 @@ pub enum GamePhase with Eq, ToString {
 
 /// ゲームフェーズの読み書きエフェクト（真値）
 /// `get` : 現在のフェーズを取得
-/// `set` : フェーズを変更（同一フレーム内に複数回呼ばれた場合は最後勝ち）
+/// `put` : フェーズを変更（同一フレーム内に複数回呼ばれた場合は最後勝ち）
 /// 「フェーズ変化に応じた scene 構築」は gameLoop が前フレームとの比較で実行する
-pub eff Phase {
+pub eff GamePhaseState {
     def get(): GamePhase
-    def set(target: GamePhase): Unit
+    def put(target: GamePhase): Unit
 }
 
 /// 自殺したノードのリサイクル要求エフェクト
@@ -120,33 +120,33 @@ instance Node[NodeTag] {
 // ========================================================================
 
 instance InputEvent.InputHandler[NodeTag] {
-    type Aef = { GameEngine.Audio, Phase }
+    type Aef = { GameEngine.Audio, GamePhaseState }
     redef onKeyPressed(key: GameEngine.Key,
-                       scene: Scene[NodeTag]): Scene[NodeTag] \ {GameEngine.Audio, Phase} =
+                       scene: Scene[NodeTag]): Scene[NodeTag] \ {GameEngine.Audio, GamePhaseState} =
         if (key == GameEngine.Key.Space and Game.canStart(scene)) {
-            Phase.set(GamePhase.Playing); scene
+            GamePhaseState.put(GamePhase.Playing); scene
         } else
             checked_ecast(BirdScene.input(BirdInputEvent.KeyPressed(key), scene))
 
     redef onMouseButtonPressed(button: GameEngine.MouseButton,
                                _position: Vec2.Vec2,
-                               scene: Scene[NodeTag]): Scene[NodeTag] \ {GameEngine.Audio, Phase} =
+                               scene: Scene[NodeTag]): Scene[NodeTag] \ {GameEngine.Audio, GamePhaseState} =
         checked_ecast(BirdScene.input(BirdInputEvent.MouseButtonPressed(button), scene))
 }
 
 // ========================================================================
 // ButtonHandler 実装（Godot TextureButton.pressed シグナル相当）
-// godot btn_play.gd と同じく、押下時に Phase.set(Playing) を発火する
+// godot btn_play.gd と同じく、押下時に GamePhaseState.put(Playing) を発火する
 // ========================================================================
 
 instance ButtonEvent.ButtonHandler[NodeTag] {
-    type Aef = { Phase }
+    type Aef = { GamePhaseState }
     redef onButtonPressed(buttonPath: NodePath, _state: NodeTag,
-                          scene: Scene[NodeTag]): Scene[NodeTag] \ Phase =
+                          scene: Scene[NodeTag]): Scene[NodeTag] \ GamePhaseState =
         let isPlayPath = buttonPath == MenuScene.playButtonPath()
                          or buttonPath == GameOverScene.playButtonPath();
         if (isPlayPath and Game.canStart(scene)) {
-            Phase.set(GamePhase.Playing); scene
+            GamePhaseState.put(GamePhase.Playing); scene
         } else scene
 }
 
@@ -225,8 +225,8 @@ mod Game {
 
     /// ゲーム開始入力を受け付けるか判定する
     /// Menu: 常に true / Playing: false / GameOver: アニメ完了後のみ true
-    pub def canStart(scene: Scene[NodeTag]): Bool \ Phase =
-        match Phase.get() {
+    pub def canStart(scene: Scene[NodeTag]): Bool \ GamePhaseState =
+        match GamePhaseState.get() {
             case GamePhase.Menu     => true
             case GamePhase.Playing  => false
             case GamePhase.GameOver => GameOverScene.isAnimationFinished(scene)
@@ -236,7 +236,7 @@ mod Game {
     // 初期状態構築
     // ========================================================================
 
-    /// プレイ中のシーンを構築する（Phase Playing 用）
+    /// プレイ中のシーンを構築する（GamePhase.Playing 用）
     /// bestScore: セッション中のベストスコア（初回は 0）
     /// GroundScene.addGrounds が JSON ファイル読み込みを行うため Fs.FileRead を伴う
     pub def buildPlayingScene(fontAtlas: FontAtlas, bestScore: BestScore): Scene[NodeTag] \ {Math.Random, Fs.FileRead} =
@@ -248,7 +248,7 @@ mod Game {
             |> GroundScene.addGrounds
             |> PipeScene.addPipes
 
-    /// メニュー画面のシーンを構築する（Phase Menu 用）
+    /// メニュー画面のシーンを構築する（GamePhase.Menu 用）
     /// 背景 + 鳥(Flying) + カメラ + HUD(スコア非表示) + 地面 + メニュー UI
     /// MenuScene.addMenuUI が JSON ファイル読み込みを行うため Fs.FileRead を伴う
     pub def buildMenuScene(fontAtlas: FontAtlas, bestScore: BestScore): Scene[NodeTag] \ Fs.FileRead =
@@ -285,7 +285,7 @@ mod Game {
     // ========================================================================
 
     /// ゲームのエントリポイント
-    /// Phase は region 内の Ref 1 個で保持。handler 群が `Phase.set` で書き換え、
+    /// GamePhase は region 内の Ref 1 個で保持。handler 群が `GamePhaseState.put` で書き換え、
     /// gameLoop が前フレームとの差分を検出して scene を組み立てる。
     /// Recycle ハンドラはノード自殺時のリサイクル要求を Math.Random + spawn 関数で
     /// 実体化する責務を担う（NodeRemovedHandler から Math.Random を切り離すため）。
@@ -305,16 +305,16 @@ mod Game {
                             CameraScene.triggerShake(CameraScene.shakeIntensity(),
                                                      CameraScene.shakeDuration(), scene)
                         case BirdState.Grounded =>
-                            Phase.set(GamePhase.GameOver);
+                            GamePhaseState.put(GamePhase.GameOver);
                             CameraScene.triggerShake(CameraScene.shakeIntensity(),
                                                      CameraScene.shakeDuration(), scene)
                         case _ => scene
                     };
                     k(nextScene)
                 }
-            } with handler Phase {
+            } with handler GamePhaseState {
                 def get(k) = k(Ref.get(phaseRef))
-                def set(target, k) = { Ref.put(target, phaseRef); k() }
+                def put(target, k) = { Ref.put(target, phaseRef); k() }
             } with handler Recycle {
                 def ground(scene, k) = k(GroundScene.spawnRecycledGround(scene))
                 def pipe(scene, k) =
@@ -346,7 +346,7 @@ mod Game {
     def gameLoop(fontAtlas: FontAtlas, previousPhase: GamePhase,
                  scene: Scene[NodeTag]):
                  Unit \ {GameEngine.Game, GameEngine.Audio, Math.Random, Fs.FileRead,
-                         Fs.FileWrite, BirdStateChanged, Phase, Recycle,
+                         Fs.FileWrite, BirdStateChanged, GamePhaseState, Recycle,
                          Editor.EditorState, EditHistory.Rewind} =
         if (GameEngine.Game.shouldClose() or
             GameEngine.Game.isKeyPressed(GameEngine.Key.Escape)) ()
@@ -363,7 +363,7 @@ mod Game {
                                    |> GameEngine.handleInput
                                    |> GameEngine.handleButtons
                                    |> GameEngine.handleCollisions;
-            let currentPhase = Phase.get();
+            let currentPhase = GamePhaseState.get();
             // hot reload: scene.json が更新されたら applyPhaseChange を再実行してシーンを組み直す。
             // ただし GameOver は applyPhaseChange が enterGameOver で既存シーンに overlay を
             // 重ねる方式なので、再実行すると overlay が二重・三重に積まれてしまう

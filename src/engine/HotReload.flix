@@ -14,8 +14,8 @@
 // 制約:
 // - GameOver フェーズ中はリロードを無効化する（GameOver は既存シーンへの
 //   overlay 方式で構築されており、再度 enterGameOver すると重複するため）
-// - リロード時は現在の Phase を再構築するので、プレイ中の進行（鳥位置・スコア）はリセットされる
-// - 状態保持は Phase / bestScore のみ
+// - リロード時は現在の GamePhase を再構築するので、プレイ中の進行（鳥位置・スコア）はリセットされる
+// - 状態保持は GamePhase / bestScore のみ
 
 mod HotReload {
     import java.lang.{Thread => JThread}
